@@ -42,7 +42,10 @@ if (-not $Force) {
     if ($ans -ne 'RESTAURAR') { Write-Host "Cancelado."; return }
 }
 
-& $esptool[0] @($esptool[1..($esptool.Count - 1)]) --port $Port write-flash 0x0 $Img
+# write_flash con guion bajo: es el nombre nativo en esptool 4.x (la version que
+# trae ESP-IDF 5.5) y sigue aceptado como alias en 5.x. La forma con guion
+# (write-flash) solo existe en 5.x y falla con el esptool del IDF.
+& $esptool[0] @($esptool[1..($esptool.Count - 1)]) --port $Port write_flash 0x0 $Img
 if ($LASTEXITCODE -ne 0) { throw "esptool fallo con codigo $LASTEXITCODE" }
 
 Write-Host ""

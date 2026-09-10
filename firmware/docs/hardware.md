@@ -26,7 +26,7 @@ Cada dato indica su procedencia. Nada viene de una ficha tecnica.
 | Funcion | Componente | Evidencia | Fuente |
 |---|---|---|---|
 | PMU / bateria | AXP2101 | simbolo `14XPowersAXP2101E` | binario |
-| Panel | ST7789, 240x284 | `BSP_LCD_H_RES` / `BSP_LCD_V_RES` | fuente del BSP |
+| Panel | ST7789, 240x284 | `esp_lcd_new_panel_st7789`, `BSP_LCD_H_RES` / `BSP_LCD_V_RES` | binario + fuente del BSP |
 | Tactil | CST816S | `esp_lcd_touch_new_i2c_cst816s` | boot log |
 | IMU | QMI8658 | `QMI8658_ADDRESS_HIGH` | boot log |
 | Codec audio | ES8311 | `Open codec device OK` | boot log |
@@ -36,6 +36,10 @@ Cada dato indica su procedencia. Nada viene de una ficha tecnica.
 | RTC | presente en la placa, sin usar por el firmware de fabrica | descripcion del BSP | registro |
 
 El driver del ES7210 soporta cuatro microfonos; esta placa habilita dos.
+
+Waveshare comercializa el panel como **ST7789P**. Ese nombre no aparece en
+ningun simbolo del binario ni del SDK: el driver real es `esp_lcd_panel_st7789`.
+Es un nombre comercial, no una variante distinta de controlador.
 
 ## Seguridad: chip completamente abierto
 
@@ -100,12 +104,15 @@ Salida: BOOT (GPIO0) apretado, enchufar USB, esperar 2 s, soltar.
 
 ## Reproducir el relevamiento
 
+Nombres de subcomando con guion bajo, para que funcionen tanto con el esptool
+4.12 que trae ESP-IDF 5.5 como con el 5.x independiente:
+
 ```
-esptool  --port COM3 chip-id
-esptool  --port COM3 flash-id
-esptool  --port COM3 get-security-info
-espefuse --port COM3 summary
-esptool  --port COM3 read-flash 0x0 0x10000 first64k.bin
+python -m esptool  --port COM3 chip_id
+python -m esptool  --port COM3 flash_id
+python -m esptool  --port COM3 get_security_info
+python -m espefuse --port COM3 summary
+python -m esptool  --port COM3 read_flash 0x0 0x10000 first64k.bin
 ```
 
 El descriptor `esp_app_desc_t` de cada app vive en `offset + 0x20`.
