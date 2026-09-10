@@ -1,0 +1,33 @@
+﻿ws183-os
+Copyright (c) 2026 santi casals
+
+Este producto incluye software desarrollado por terceros:
+
+  ESP-IDF
+  Copyright (c) Espressif Systems (Shanghai) CO LTD
+  Licencia: Apache License 2.0
+  https://github.com/espressif/esp-idf
+
+  waveshare/esp32_s3_touch_lcd_1_83  (Board Support Package)
+  Copyright (c) Waveshare Electronics
+  Licencia: Apache License 2.0
+  https://github.com/waveshareteam/Waveshare-ESP32-components
+
+  LVGL
+  Copyright (c) LVGL Kft
+  Licencia: MIT
+  https://github.com/lvgl/lvgl
+
+  esp_lvgl_port, esp_codec_dev, esp_lcd_touch_cst816s,
+  esp_lcd_panel_io_additions
+  Copyright (c) Espressif Systems (Shanghai) CO LTD
+  Licencia: Apache License 2.0
+
+Los componentes anteriores se consumen como dependencias declaradas via
+ESP-IDF Component Manager. Este repositorio NO redistribuye binarios de
+terceros.
+
+En particular, NO forman parte de este repositorio:
+  - phone_s3_box_3 (app de demostracion de Waveshare)
+  - xiaozhi (firmware de terceros)
+  - cualquier volcado de flash o de NVS de la placa

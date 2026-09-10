@@ -1,0 +1,21 @@
+# Build de ESP-IDF
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+dependencies.lock
+
+# Volcados de la placa: binarios de terceros y datos privados.
+# Nunca entran al repositorio.
+*.bin
+ws183-factory-backup/
+**/nvs*.bin
+
+# Entornos y basura de editor
+.venv/
+venv/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

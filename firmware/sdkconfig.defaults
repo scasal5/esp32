@@ -1,0 +1,46 @@
+CONFIG_IDF_TARGET="esp32s3"
+
+# --- Flash: 16 MB. La de fabrica corre QIO 80 MHz en runtime. ---
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+
+# --- Tabla de particiones propia ---
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions/default.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x8000
+
+# --- PSRAM octal 8 MB @ 80 MHz (AP Memory 3V3, verificado en el boot log) ---
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_BOOT_INIT=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_MEMTEST=n
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+
+# --- Consola por USB-Serial-JTAG ---
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+# CONFIG_ESP_CONSOLE_UART_DEFAULT is not set
+
+# --- Sin light sleep. Esto es lo que evita el 'sleep_gpio: isolate all GPIO'
+#     del firmware de fabrica, que dejaba el COM colgado en Windows. ---
+# CONFIG_PM_ENABLE is not set
+# CONFIG_FREERTOS_USE_TICKLESS_IDLE is not set
+# CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP is not set
+
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=15
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# --- BSP ---
+# El BSP monta SPIFFS por label y su default es "storage". Nuestra tabla
+# llama a esa particion "assets", asi que hay que decirselo o falla el mount.
+CONFIG_BSP_SPIFFS_PARTITION_LABEL="assets"
+
+# --- LVGL ---
+CONFIG_LV_USE_LOG=y
+CONFIG_LV_COLOR_DEPTH_16=y
+# Sin esto no linkea lv_font_montserrat_20 (por defecto solo viene la 14).
+CONFIG_LV_FONT_MONTSERRAT_20=y
+CONFIG_LV_FONT_MONTSERRAT_14=y
