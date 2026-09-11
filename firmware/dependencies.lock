@@ -135,7 +135,7 @@ dependencies:
     - esp32s3
     version: 2.0.0
   xpowerslib:
-    component_hash: 876babebaaa444b003bdba5fd7cf58b8c5f216c50f6a29be09fe7fcb998e45b4
+    component_hash: 7b257c96e362b297d4802c39155118fbbffa8c63f39904dacd9541495488b079
     dependencies: []
     source:
       git: https://github.com/lewisxhe/XPowersLib.git
