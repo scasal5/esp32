@@ -1,5 +1,9 @@
 CONFIG_IDF_TARGET="esp32s3"
 
+# --- CPU a 240 MHz. El default del ESP32-S3 es 160; el firmware de fabrica
+#     corre a 240 y no hay razon para dejar rendimiento sin usar. ---
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+
 # --- Flash: 16 MB. La de fabrica corre QIO 80 MHz en runtime. ---
 CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
 CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
@@ -24,10 +28,17 @@ CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 # CONFIG_ESP_CONSOLE_UART_DEFAULT is not set
 
-# --- Sin light sleep. Esto es lo que evita el 'sleep_gpio: isolate all GPIO'
-#     del firmware de fabrica, que dejaba el COM colgado en Windows. ---
+# --- Sin light sleep.
+#
+#     Con PM_ENABLE apagado no hay light sleep automatico, asi que el
+#     aislamiento de GPIO nunca llega a ejecutarse y el USB-Serial-JTAG no se
+#     duerme. Eso es lo que evita el COM zombie que daba el firmware de fabrica.
+#
+#     Nota: la linea "sleep_gpio: Configure to isolate all GPIO pins in sleep
+#     state" IGUAL aparece en el boot log. La emite CONFIG_PM_SLP_DISABLE_GPIO,
+#     que sigue en 'y' y solo deja preparada la configuracion por si hubiera un
+#     sleep. Sin PM no se dispara. Es esperado, no es el bug de fabrica. ---
 # CONFIG_PM_ENABLE is not set
-# CONFIG_FREERTOS_USE_TICKLESS_IDLE is not set
 # CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP is not set
 
 CONFIG_ESP_TASK_WDT_TIMEOUT_S=15
