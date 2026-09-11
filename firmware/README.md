@@ -51,7 +51,7 @@ Los gestos son una propuesta y se pueden discutir en un issue.
 | 4 | WiFi: escanear, conectar y recordar redes | planeado |
 | 5 | Subir GIFs desde el celular por la red local | planeado |
 | 6 | Hora por SNTP + RTC; actualizaciones OTA a `ota_0` | planeado |
-| — | CI que corra `idf.py build` en cada PR | pendiente |
+| — | CI: cada PR corre `idf.py build` con ESP-IDF 5.5.1 contra `firmware/` | hecho |
 
 Mas adelante, sin orden fijo: IMU (girar la imagen, despertar al levantar),
 audio, microSD y gestion de energia. La gestion de energia va ultima a
@@ -110,6 +110,13 @@ de fabrica se compilo con un IDF marcado `-dirty`, que no es reproducible.
 idf.py set-target esp32s3
 idf.py build
 ```
+
+Cada PR y cada push a `main` corren ese mismo `idf.py build` en GitHub Actions
+([`.github/workflows/build.yml`](../.github/workflows/build.yml)), con
+ESP-IDF 5.5.1 fijo y target `esp32s3`, contra `firmware/`. Parte de un clone
+limpio: sin `sdkconfig` local, solo `sdkconfig.defaults` y `dependencies.lock`.
+No flashea ni prueba en placa; si una dependencia no resuelve o el build se
+rompe, el PR queda en rojo antes de llegar a COM3.
 
 El Component Manager baja el BSP y sus dependencias en el primer build. El
 manifiesto vive en [`main/idf_component.yml`](main/idf_component.yml): pertenece
