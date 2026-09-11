@@ -1,5 +1,6 @@
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_event.h"
 
 #include "bsp/esp-bsp.h"
 #include "bsp/display.h"   /* brightness/backlight viven aca, no en esp-bsp.h */
@@ -7,9 +8,11 @@
 #include <stdlib.h>
 #include <time.h>
 
-#include "boot_splash.h"
-#include "pm.h"
+#include "app_menu.h"
 #include "board_rtc.h"
+#include "boot_splash.h"
+#include "menu_button.h"
+#include "pm.h"
 #include "splash_gif.h"
 #include "time_console.h"
 
@@ -80,6 +83,22 @@ void app_main(void)
            pantalla ya encendida, para que su prompt no se mezcle con el
            arranque. */
     time_console_start();
+
+    /* 7c. Boton BOOT -> UI_EVENT_MENU -> carrusel de apps. El loop de eventos
+           por defecto lo va a usar tambien el WiFi (fase 4). Si falla, la
+           placa sigue sin menu. */
+    err = esp_event_loop_create_default();
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "event loop: %s", esp_err_to_name(err));
+    } else {
+        err = app_menu_init();
+        if (err == ESP_OK) {
+            err = menu_button_start();
+        }
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "menu: %s", esp_err_to_name(err));
+        }
+    }
 
     /* 8. El resto de los servicios (audio, imu, wifi) va aca.
           Nada de esto debe bloquear el primer frame. */
