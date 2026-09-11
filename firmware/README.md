@@ -159,6 +159,12 @@ cuelgue, es el estado final de v0.
 El warning `ledc: GPIO 40 is not usable, maybe conflict with others` es
 cosmetico: el backlight enciende igual.
 
+El warning `i2c.master: Please check pull-up resistances whether be connected
+properly` es del mismo tipo. ESP-IDF lo imprime siempre que se crea un bus I2C
+sin la pull-up interna (`esp_driver_i2c/i2c_master.c`), y el BSP no la activa.
+No indica un bus colgado: el AXP2101 contesta en ese mismo bus justo despues
+(`AXP2101 inicializado` y la linea de telemetria).
+
 ## Personalizar
 
 Lo que se puede cambiar hoy, sin tocar el resto del firmware:
