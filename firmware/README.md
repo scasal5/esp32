@@ -18,7 +18,8 @@ lo que este documento marca como *planeado* todavia no existe.
 | Panel ST7789 y backlight sin parpadeo al arrancar | funciona |
 | Bateria (AXP2101, solo lectura) | funciona |
 | Tactil CST816S | el BSP lo registra en LVGL, pero nada lo usa todavia |
-| Imagen personalizable, gestos, WiFi, apps | planeado |
+| WiFi: scan y lista de redes cercanas | funciona |
+| Imagen personalizable, gestos y apps | planeado |
 
 ## Hacia donde va
 
@@ -48,7 +49,7 @@ Los gestos son una propuesta y se pueden discutir en un issue.
 | 1b | Animacion de `splash.gif`, con decodificacion y PSRAM medidas en hardware | planeado |
 | 2 | Shell: gestos, barra de estado y registro de apps | planeado |
 | 3 | App *Fondo*: elegir imagen, encuadrarla y dibujar encima | planeado |
-| 4 | WiFi: escanear, conectar y recordar redes | planeado |
+| 4 | WiFi: scan y lista de redes cercanas | hecho; conectar y recordar redes, planeado |
 | 5 | Subir GIFs desde el celular por la red local | planeado |
 | 6 | Hora por SNTP + RTC; actualizaciones OTA a `ota_0` | planeado |
 | — | CI: cada PR corre `idf.py build` con ESP-IDF 5.5.1 contra `firmware/` | hecho |
@@ -100,6 +101,19 @@ El splash lee el estado inmediatamente y lo refresca cada 3 segundos:
 Tambien se registra una linea de telemetria con presencia, carga, porcentaje y
 las tensiones de bateria, VBUS y sistema. Todavia no hay logica de carga ni de
 apagado.
+
+## WiFi
+
+El servicio inicia WiFi en modo STA despues del primer frame, sin conectarse a
+ninguna red ni guardar credenciales. Al abrir la card **WiFi** del carrusel,
+ejecuta un scan asincrono y muestra hasta 16 redes cercanas, ordenadas por
+RSSI, con su SSID y potencia en dBm. Los SSID repetidos se consolidan y se
+conserva la senal mas fuerte; las redes protegidas llevan `*`. Las ocultas
+no se listan. El driver guarda calibracion PHY en NVS, no credenciales.
+
+BOOT cierra la lista y vuelve al inicio. Tocar una red no conecta: esa parte,
+igual que NVS para credenciales, queda para otro PR. Si WiFi no pudo iniciar,
+la pantalla muestra `WiFi no listo` y el resto del firmware sigue funcionando.
 
 ## Compilar
 
@@ -171,6 +185,11 @@ properly` es del mismo tipo. ESP-IDF lo imprime siempre que se crea un bus I2C
 sin la pull-up interna (`esp_driver_i2c/i2c_master.c`), y el BSP no la activa.
 No indica un bus colgado: el AXP2101 contesta en ese mismo bus justo despues
 (`AXP2101 inicializado` y la linea de telemetria).
+
+Despues de `splash visible` se espera tambien `wifi: STA up`. Para probar el
+scan, pulsa BOOT, abre la card **WiFi** y espera la lista de SSID con su RSSI.
+Otro click de BOOT, o el boton **Cerrar**, vuelve al inicio. El scan no conecta
+ni solicita contrasenas.
 
 ## Personalizar
 
@@ -314,6 +333,8 @@ Issues y PRs son bienvenidos. Antes de abrir un PR:
   fuente.
 - Una imagen o sonido nuevo va con su autor y su licencia en [NOTICE](NOTICE),
   y la licencia tiene que permitir redistribuirlo y modificarlo.
+- El scan WiFi no conecta ni guarda contrasenas; esa funcionalidad va en un PR
+  separado con su namespace NVS.
 
 Las reglas de codigo (servicios, apps, hilos y LVGL) estan en
 [`docs/arquitectura.md`](docs/arquitectura.md).
