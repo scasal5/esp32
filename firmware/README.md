@@ -68,9 +68,16 @@ que funciona en las dos.
 idf.py -p COM3 flash monitor
 ```
 
-Esperado en el monitor: log por USB-Serial-JTAG, `panel up: 240x284`, y el
-splash en pantalla. Si el log vive pero la pantalla queda negra, el problema
-es backlight o PMU, no el USB.
+Esperado en el monitor: log por USB-Serial-JTAG, `cpu freq: 240000000 Hz`,
+`panel up: 240x284`, y el splash en pantalla. Si el log vive pero la pantalla
+queda negra, el problema es backlight o PMU, no el USB.
+
+El firmware **se queda en el splash**: `app_main` retorna despues de dibujarlo
+y la task de LVGL mantiene la pantalla. No es un cuelgue, es el estado final
+de v0.
+
+El warning `ledc: GPIO 40 is not usable, maybe conflict with others` es
+cosmetico: el backlight enciende igual.
 
 ## Recuperacion
 
@@ -100,8 +107,14 @@ al abrir, `ERROR_SEM_TIMEOUT` al escribir).
 Manten apretado **BOOT (GPIO0)**, enchufa el USB, espera 2 s y solta: entra al
 ROM antes de que corra el firmware.
 
-Este repo desactiva el light sleep en `sdkconfig.defaults` justamente para no
-reproducir ese comportamiento.
+Este repo apaga `CONFIG_PM_ENABLE`, asi que no hay light sleep automatico y el
+USB-Serial-JTAG nunca se duerme.
+
+La linea `sleep_gpio: Configure to isolate all GPIO pins in sleep state`
+**igual aparece** en el boot log de este firmware. La emite
+`CONFIG_PM_SLP_DISABLE_GPIO`, que sigue habilitada y solo deja preparada la
+configuracion por si hubiera un sleep; sin gestion de energia no se dispara.
+Ver esa linea no significa que el COM se vaya a colgar.
 
 ## Particiones
 
