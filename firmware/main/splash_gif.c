@@ -128,8 +128,11 @@ static bool show_frame0(size_t len)
     }
 
     lv_obj_t *gif = lv_gif_create(lv_screen_active());
-    /* Antes de set_src: el default ARGB8888 duplica el framebuffer. */
-    lv_gif_set_color_format(gif, LV_COLOR_FORMAT_RGB565);
+    /* ARGB8888, antes de set_src: es el unico formato en el que lv_gif respeta
+       el indice transparente del GIF (alfa 0) y el fondo del splash se ve a
+       traves. En RGB565 los pixels transparentes se pintan opacos con el color
+       de fondo del GIF. Cuesta 4 bytes por pixel en PSRAM (224 KB a 240x234). */
+    lv_gif_set_color_format(gif, LV_COLOR_FORMAT_ARGB8888);
 
     int64_t t0 = esp_timer_get_time();
     /* Decodifica el frame 0 con el lock tomado, y ademas arranca el timer. */
