@@ -9,6 +9,7 @@
    holgado: no hay nada que mirar a mayor frecuencia. */
 #define BATTERY_REFRESH_MS 3000
 
+static lv_obj_t *s_title = NULL;
 static lv_obj_t *s_status = NULL;
 
 /*
@@ -57,11 +58,11 @@ void boot_splash_show(void)
     lv_obj_set_style_bg_color(scr, lv_color_hex(0x101418), 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 
-    lv_obj_t *title = lv_label_create(scr);
-    lv_label_set_text(title, "ws183-os");
-    lv_obj_set_style_text_color(title, lv_color_hex(0xF2F4F8), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
-    lv_obj_align(title, LV_ALIGN_CENTER, 0, -12);
+    s_title = lv_label_create(scr);
+    lv_label_set_text(s_title, "ws183-os");
+    lv_obj_set_style_text_color(s_title, lv_color_hex(0xF2F4F8), 0);
+    lv_obj_set_style_text_font(s_title, &lv_font_montserrat_20, 0);
+    lv_obj_align(s_title, LV_ALIGN_CENTER, 0, -12);
 
     s_status = lv_label_create(scr);
     lv_label_set_text(s_status, "...");
@@ -73,6 +74,27 @@ void boot_splash_show(void)
     battery_update(NULL);
 
     lv_timer_create(battery_update, BATTERY_REFRESH_MS, NULL);
+
+    bsp_display_unlock();
+}
+
+void boot_splash_hide_text(void)
+{
+    /* Timeout 0 en esp_lvgl_port = esperar sin limite. El mutex es recursivo,
+       asi que funciona tambien si quien llama ya tiene el lock. */
+    if (!bsp_display_lock(0)) {
+        return;
+    }
+
+    /* Solo las etiquetas propias: el GIF cuelga de la misma pantalla y no hay
+       que ocultarlo. El timer de bateria sigue escribiendo en s_status oculto,
+       sin efecto visible. */
+    if (s_title != NULL) {
+        lv_obj_add_flag(s_title, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_status != NULL) {
+        lv_obj_add_flag(s_status, LV_OBJ_FLAG_HIDDEN);
+    }
 
     bsp_display_unlock();
 }

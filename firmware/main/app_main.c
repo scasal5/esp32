@@ -6,6 +6,7 @@
 
 #include "boot_splash.h"
 #include "pm.h"
+#include "splash_gif.h"
 
 static const char *TAG = "ws183";
 
@@ -52,6 +53,10 @@ void app_main(void)
           primer frame. */
     pm_log_status();
 
-    /* 7. El resto de los servicios (audio, imu, wifi) va aca.
+    /* 7. Imagen de inicio (fase 1a), en su propia task y con la luz ya
+          encendida: si no hay GIF usable, queda el splash de texto. */
+    splash_gif_start();
+
+    /* 8. El resto de los servicios (audio, imu, wifi) va aca.
           Nada de esto debe bloquear el primer frame. */
 }
