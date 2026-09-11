@@ -51,7 +51,7 @@ CONFIG_BSP_SPIFFS_PARTITION_LABEL="assets"
 
 # --- LVGL ---
 # Malloc de C en vez del pool propio de LVGL (64 KB fijos): el objeto lv_gif
-# (~24 KB) y su framebuffer RGB565 (hasta 136 KB) no entran en el pool. Con
+# (~24 KB) y su framebuffer ARGB8888 (hasta 272 KB) no entran en el pool. Con
 # CONFIG_SPIRAM_USE_MALLOC, los pedidos grandes se sirven desde PSRAM.
 # CONFIG_LV_USE_BUILTIN_MALLOC is not set
 CONFIG_LV_USE_CLIB_MALLOC=y
