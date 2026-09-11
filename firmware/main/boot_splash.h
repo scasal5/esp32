@@ -5,8 +5,8 @@
    el splash y no el contenido sucio del framebuffer. */
 void boot_splash_show(void);
 
-/* Oculta el titulo y el estado de bateria del splash de texto. La llama la
-   task del GIF cuando el frame 0 ya esta en pantalla; si el GIF no carga, no
-   se llama y el texto queda. Toma el lock de LVGL (recursivo): se puede
-   llamar con el lock ya tomado. */
+/* Oculta el titulo y la bateria del splash de texto y borra su timer de
+   bateria (la pantalla de inicio lee la bateria por su cuenta). La llama la
+   task de la imagen de inicio justo antes de mostrar la pantalla de inicio.
+   Toma el lock de LVGL (recursivo): se puede llamar con el lock ya tomado. */
 void boot_splash_hide_text(void);

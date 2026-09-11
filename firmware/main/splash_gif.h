@@ -1,11 +1,12 @@
 #pragma once
 
 /*
- * Fase 1a: primer frame de BSP_SPIFFS_MOUNT_POINT/splash.gif sobre el splash
- * de texto.
+ * Arranque de la pantalla de inicio.
  *
- * Arranca una task propia: monta assets, lee el GIF a PSRAM, valida la
- * cabecera y muestra el frame 0 en pausa. Cualquier falla deja el splash de
- * texto como esta. Llamar despues de encender el backlight.
+ * Una task propia monta assets, lee BSP_SPIFFS_MOUNT_POINT/splash.gif a PSRAM,
+ * decodifica el frame 0 y lo convierte una sola vez en fondo: mas chico,
+ * desenfocado y oscurecido. Despues reemplaza el splash de texto por la
+ * pantalla de inicio (fondo + hora + bateria). Sin GIF usable, la pantalla de
+ * inicio sale igual, sin fondo. Llamar despues de encender el backlight.
  */
 void splash_gif_start(void);

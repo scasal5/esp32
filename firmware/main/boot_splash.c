@@ -1,5 +1,6 @@
 #include "boot_splash.h"
 #include "pm.h"
+#include "pm_format.h"
 
 #include "bsp/esp-bsp.h"
 #include "lvgl.h"
@@ -11,11 +12,11 @@
 
 static lv_obj_t *s_title = NULL;
 static lv_obj_t *s_status = NULL;
+static lv_timer_t *s_battery_timer = NULL;
 
 /*
  * Corre en el contexto de la task de LVGL, invocada por lv_timer. Esa task ya
- * tiene tomado el lock, por eso aca NO se llama a bsp_display_lock(): hacerlo
- * seria un segundo lock desde el mismo hilo.
+ * tiene tomado el lock, por eso aca NO se llama a bsp_display_lock().
  *
  * Solo lee el PMU. No configura carga ni toca rieles.
  */
@@ -28,22 +29,9 @@ static void battery_update(lv_timer_t *timer)
     }
 
     pm_status_t st;
-    if (pm_read(&st) != ESP_OK) {
-        lv_label_set_text(s_status, "sin PMU");
-        return;
-    }
-
-    if (!st.present) {
-        lv_label_set_text(s_status, "sin bateria");
-    } else if (st.percent < 0) {
-        /* El PMU no pudo estimar el porcentaje: mostramos la tension medida,
-           que siempre es un dato real. */
-        lv_label_set_text_fmt(s_status, "%u mV%s",
-                              (unsigned)st.batt_mv, st.charging ? " USB" : "");
-    } else {
-        lv_label_set_text_fmt(s_status, "%d%%%s",
-                              st.percent, st.charging ? " USB" : "");
-    }
+    char text[24];
+    pm_format_label(pm_read(&st) == ESP_OK ? &st : NULL, text, sizeof(text));
+    lv_label_set_text(s_status, text);
 }
 
 void boot_splash_show(void)
@@ -73,7 +61,7 @@ void boot_splash_show(void)
        durante los primeros BATTERY_REFRESH_MS. */
     battery_update(NULL);
 
-    lv_timer_create(battery_update, BATTERY_REFRESH_MS, NULL);
+    s_battery_timer = lv_timer_create(battery_update, BATTERY_REFRESH_MS, NULL);
 
     bsp_display_unlock();
 }
@@ -86,9 +74,15 @@ void boot_splash_hide_text(void)
         return;
     }
 
-    /* Solo las etiquetas propias: el GIF cuelga de la misma pantalla y no hay
-       que ocultarlo. El timer de bateria sigue escribiendo en s_status oculto,
-       sin efecto visible. */
+    /* La pantalla de inicio lee la bateria por su cuenta: dos timers harian
+       el doble de transacciones I2C dentro de la task de LVGL. */
+    if (s_battery_timer != NULL) {
+        lv_timer_delete(s_battery_timer);
+        s_battery_timer = NULL;
+    }
+
+    /* Solo las etiquetas propias: la pantalla de inicio cuelga de la misma
+       pantalla y no hay que ocultarla. */
     if (s_title != NULL) {
         lv_obj_add_flag(s_title, LV_OBJ_FLAG_HIDDEN);
     }
