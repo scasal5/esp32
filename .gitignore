@@ -3,7 +3,10 @@ build/
 sdkconfig
 sdkconfig.old
 managed_components/
-dependencies.lock
+
+# dependencies.lock SI se versiona a proposito: fija las versiones y los hashes
+# exactos que resolvio el Component Manager. Es lo que hace que el build sea
+# reproducible por un tercero, que es el objetivo del proyecto.
 
 # Volcados de la placa: binarios de terceros y datos privados.
 # Nunca entran al repositorio.
