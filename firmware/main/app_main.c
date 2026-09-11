@@ -5,6 +5,7 @@
 #include "bsp/display.h"   /* brightness/backlight viven aca, no en esp-bsp.h */
 
 #include "boot_splash.h"
+#include "pm.h"
 
 static const char *TAG = "ws183";
 
@@ -14,6 +15,13 @@ void app_main(void)
           la IMU QMI8658 y el RTC de la placa. */
     ESP_ERROR_CHECK(bsp_i2c_init());
     ESP_LOGI(TAG, "i2c up");
+
+    /* 1b. PMU, en cuanto hay bus. Solo lectura: no toca rieles.
+           Si falla no se aborta, porque el splash no depende del PMU. */
+    esp_err_t pm_err = pm_init();
+    if (pm_err != ESP_OK) {
+        ESP_LOGW(TAG, "pm_init: %s", esp_err_to_name(pm_err));
+    }
 
     /* 2. Backlight apagado ANTES de encender el panel. Si se enciende la luz
           primero, el usuario ve el framebuffer sin inicializar.
@@ -40,6 +48,10 @@ void app_main(void)
     ESP_ERROR_CHECK(bsp_display_brightness_set(80));
     ESP_LOGI(TAG, "splash visible");
 
-    /* 6. Servicios (pm, audio, imu, wifi) van aca, despues del splash.
+    /* 6. Telemetria del PMU, ya con la pantalla encendida para no demorar el
+          primer frame. */
+    pm_log_status();
+
+    /* 7. El resto de los servicios (audio, imu, wifi) va aca.
           Nada de esto debe bloquear el primer frame. */
 }

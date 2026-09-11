@@ -134,10 +134,19 @@ dependencies:
     targets:
     - esp32s3
     version: 2.0.0
+  xpowerslib:
+    component_hash: 876babebaaa444b003bdba5fd7cf58b8c5f216c50f6a29be09fe7fcb998e45b4
+    dependencies: []
+    source:
+      git: https://github.com/lewisxhe/XPowersLib.git
+      path: .
+      type: git
+    version: ef40b49af66fe3b1907ab74ca76e10c0dbf69012
 direct_dependencies:
 - idf
 - lvgl/lvgl
 - waveshare/esp32_s3_touch_lcd_1_83
-manifest_hash: 981c29cb529562272fcad568597248cfeb35c2b427b419bc0cc0a2e1581070ba
+- xpowerslib
+manifest_hash: fdefd9e06bcde517bc6a9d1d98a14414020b3335e274410683c6d4c903c7218a
 target: esp32s3
 version: 2.0.0
