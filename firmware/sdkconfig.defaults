@@ -61,4 +61,6 @@ CONFIG_LV_USE_LOG=y
 CONFIG_LV_COLOR_DEPTH_16=y
 # Sin esto no linkea lv_font_montserrat_20 (por defecto solo viene la 14).
 CONFIG_LV_FONT_MONTSERRAT_20=y
+# Hora de la pantalla de inicio.
+CONFIG_LV_FONT_MONTSERRAT_36=y
 CONFIG_LV_FONT_MONTSERRAT_14=y
