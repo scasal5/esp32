@@ -27,6 +27,13 @@ Los componentes anteriores se consumen como dependencias declaradas via
 ESP-IDF Component Manager. Este repositorio NO redistribuye binarios de
 terceros.
 
+Codigo fuente de terceros incluido en este repositorio, sin modificar:
+
+  XPowersLib  (components/xpowerslib)
+  Copyright (c) 2022 lewis he
+  Licencia: MIT (components/xpowerslib/LICENSE)
+  https://github.com/lewisxhe/XPowersLib  (tag v0.3.3, commit ef40b49)
+
 En particular, NO forman parte de este repositorio:
   - phone_s3_box_3 (app de demostracion de Waveshare)
   - xiaozhi (firmware de terceros)

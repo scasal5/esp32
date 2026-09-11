@@ -1,0 +1,3 @@
+# Copia vendoreada: git guarda y extrae los bytes tal cual, sin convertir
+# finales de linea. Upstream mezcla CRLF y LF (ver UPSTREAM.md).
+* -text

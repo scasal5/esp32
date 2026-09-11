@@ -9,10 +9,8 @@ dependencies:
   # ni lv_display_t ni lv_screen_active(). Pineamos la 9 explicitamente.
   lvgl/lvgl: "^9"
 
-  # AXP2101. Se toma del repositorio del autor con tag fijo, en vez del fork
-  # republicado por terceros que hay en el registro: el objetivo del proyecto
-  # es codigo auditable y de origen conocido. dependencies.lock fija el commit
-  # exacto (v0.3.3 = ef40b49af66fe3b1907ab74ca76e10c0dbf69012).
-  xpowerslib:
-    git: https://github.com/lewisxhe/XPowersLib.git
-    version: v0.3.3
+  # AXP2101: XPowersLib NO se declara aca. Esta vendoreada en
+  # components/xpowerslib, copiada del repositorio del autor en v0.3.3
+  # (ef40b49). Como dependencia git, el Component Manager hashea el arbol
+  # descargado con los finales de linea de cada sistema y el hash del lock
+  # no coincide entre Windows y Linux (ver components/xpowerslib/UPSTREAM.md).
