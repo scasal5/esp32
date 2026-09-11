@@ -31,3 +31,11 @@ En particular, NO forman parte de este repositorio:
   - phone_s3_box_3 (app de demostracion de Waveshare)
   - xiaozhi (firmware de terceros)
   - cualquier volcado de flash o de NVS de la placa
+
+Recursos graficos incluidos en este repositorio:
+
+  docs/esp32.gif, y sus versiones derivadas (por ejemplo, un
+  assets/splash.gif exportado a 240 px de ancho)
+  Copyright (c) santi casals <santiago@casals.ar>
+  Licencia: MIT
+  https://casals.ar/assets/esp32.gif

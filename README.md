@@ -62,13 +62,17 @@ firmware/
 ├── CMakeLists.txt
 ├── NOTICE
 ├── README.md
-├── docs/{hardware.md,flashing.md}
+├── docs/{hardware.md,arquitectura.md}
 ├── partitions/default.csv
 ├── sdkconfig.defaults
-├── main/{app_main.c,boot_splash.*,idf_component.yml,ui/,services/}
-├── components/
+├── main/{app_main.c,boot_splash.*,pm*,idf_component.yml}
+├── components/{svc_*,shell,app_*}   (planeado)
+├── assets/                          (planeado)
 └── scripts/restore_factory.ps1
 ```
+
+Capas, reglas y contrato de apps en
+[`firmware/docs/arquitectura.md`](firmware/docs/arquitectura.md).
 
 `LICENSE` vive en la raiz del repositorio, no dentro de `firmware/`.
 

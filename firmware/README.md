@@ -1,10 +1,71 @@
 # ws183-os
 
-Firmware propio para la **Waveshare ESP32-S3-Touch-LCD-1.83**, construido sobre
-ESP-IDF oficial y el BSP publicado por Waveshare — no un fork del firmware de
-fabrica.
+Un mini sistema operativo **abierto y modificable** para la **Waveshare
+ESP32-S3-Touch-LCD-1.83**: pantalla de inicio con imagen propia, gestos, WiFi y
+apps chicas. Construido sobre ESP-IDF oficial y el BSP publicado por Waveshare,
+no es un fork del firmware de fabrica.
 
-Estado: **v0**, arranca el panel y dibuja un splash. Nada mas todavia.
+La idea es que cualquiera pueda clonar el repo, cambiar la imagen o los colores,
+agregar una app y flashearlo en su placa.
+
+## Estado
+
+**v0.** Arranca el panel y muestra un splash con el estado de la bateria. Todo
+lo que este documento marca como *planeado* todavia no existe.
+
+| | Hoy |
+|---|---|
+| Panel ST7789 y backlight sin parpadeo al arrancar | funciona |
+| Bateria (AXP2101, solo lectura) | funciona |
+| Tactil CST816S | el BSP lo registra en LVGL, pero nada lo usa todavia |
+| Imagen personalizable, gestos, WiFi, apps | planeado |
+
+## Hacia donde va
+
+El splash deja de ser un texto fijo y pasa a ser la **pantalla de inicio**:
+
+```
+┌────────────────────┐
+│ 12:40   WiFi   87% │  barra de estado
+│                    │
+│                    │
+│    [ tu imagen ]   │  imagen elegida por el usuario
+│                    │
+│                    │
+└────────────────────┘
+  deslizar a los lados  ->  editar la imagen
+  deslizar hacia abajo  ->  WiFi y ajustes rapidos
+```
+
+Los gestos son una propuesta y se pueden discutir en un issue.
+
+### Hoja de ruta
+
+| Fase | Que | Estado |
+|---|---|---|
+| 0 | Panel, splash y bateria en solo lectura | hecho |
+| 1a | Imagen de inicio: primer frame de `splash.gif` desde `assets`, con el splash actual como respaldo | planeado |
+| 1b | Animacion de `splash.gif`, con decodificacion y PSRAM medidas en hardware | planeado |
+| 2 | Shell: gestos, barra de estado y registro de apps | planeado |
+| 3 | App *Fondo*: elegir imagen, encuadrarla y dibujar encima | planeado |
+| 4 | WiFi: escanear, conectar y recordar redes | planeado |
+| 5 | Subir GIFs desde el celular por la red local | planeado |
+| 6 | Hora por SNTP + RTC; actualizaciones OTA a `ota_0` | planeado |
+| — | CI que corra `idf.py build` en cada PR | pendiente |
+
+Mas adelante, sin orden fijo: IMU (girar la imagen, despertar al levantar),
+audio, microSD y gestion de energia. La gestion de energia va ultima a
+proposito: el light sleep es lo que colgaba el USB en el firmware de fabrica
+(ver [Si la placa no responde por USB](#si-la-placa-no-responde-por-usb)).
+
+La imagen de inicio es **un GIF**, animado o de un solo frame: para cambiarla
+alcanza con reemplazar un archivo, sin conversores. En una pantalla de 1,83"
+editar sirve para encuadrar y retocar. Los GIFs nuevos van a entrar por
+`firmware/assets/` al compilar (fase 1a), por la microSD o desde el celular
+(fase 5).
+
+Capas, reglas de hilos y el contrato de una app estan en
+[`docs/arquitectura.md`](docs/arquitectura.md).
 
 ## Hardware
 
@@ -21,6 +82,24 @@ Estado: **v0**, arranca el panel y dibuja un splash. Nada mas todavia.
 | Almacenamiento | ranura microSD |
 
 Detalle completo y verificado en [`docs/hardware.md`](docs/hardware.md).
+
+## Estado de bateria
+
+El AXP2101 se inicializa en modo **solo lectura** despues del bus I2C. El
+firmware habilita los ADC de medicion, pero no cambia tensiones, rieles,
+carga ni apagado. Si el PMU no responde, el arranque continua y el splash
+muestra `sin PMU`.
+
+El splash lee el estado inmediatamente y lo refresca cada 3 segundos:
+
+- `100%` o `98% USB` cuando hay porcentaje disponible;
+- la tension medida, por ejemplo `3870 mV`, si el PMU no puede estimar el
+  porcentaje;
+- `sin bateria` cuando no hay una bateria conectada.
+
+Tambien se registra una linea de telemetria con presencia, carga, porcentaje y
+las tensiones de bateria, VBUS y sistema. Todavia no hay logica de carga ni de
+apagado.
 
 ## Compilar
 
@@ -69,15 +148,83 @@ idf.py -p COM3 flash monitor
 ```
 
 Esperado en el monitor: log por USB-Serial-JTAG, `cpu freq: 240000000 Hz`,
-`panel up: 240x284`, y el splash en pantalla. Si el log vive pero la pantalla
-queda negra, el problema es backlight o PMU, no el USB.
+`panel up: 240x284`, una linea `AXP2101 inicializado` y el splash con el estado
+de bateria. Si el log vive pero la pantalla queda negra, el problema es
+backlight o PMU, no el USB.
 
 El firmware **se queda en el splash**: `app_main` retorna despues de dibujarlo
-y la task de LVGL mantiene la pantalla. No es un cuelgue, es el estado final
-de v0.
+y la task de LVGL mantiene la pantalla y actualiza la bateria. No es un
+cuelgue, es el estado final de v0.
 
 El warning `ledc: GPIO 40 is not usable, maybe conflict with others` es
 cosmetico: el backlight enciende igual.
+
+## Personalizar
+
+Lo que se puede cambiar hoy, sin tocar el resto del firmware:
+
+| Que | Donde |
+|---|---|
+| Titulo y colores del splash | `boot_splash_show()` en [`main/boot_splash.c`](main/boot_splash.c) |
+| Periodo de refresco de la bateria | `BATTERY_REFRESH_MS` en el mismo archivo |
+| Brillo al arrancar | `bsp_display_brightness_set(80)` en [`main/app_main.c`](main/app_main.c) |
+| Fuentes disponibles | `CONFIG_LV_FONT_MONTSERRAT_*` en [`sdkconfig.defaults`](sdkconfig.defaults) |
+
+### Imagen de inicio (planeado, fases 1a y 1b)
+
+> **Nada de esto existe todavia.** No hay carpeta `firmware/assets/`, el
+> [`CMakeLists.txt`](CMakeLists.txt) no declara ninguna imagen SPIFFS, LVGL no
+> tiene habilitado el GIF y el comando `assets-flash` de abajo **falla hoy**. Se
+> documenta el diseno para que la fase 1a lo implemente tal cual.
+
+La imagen es `firmware/assets/splash.gif`:
+
+| | Regla |
+|---|---|
+| Formato | GIF, animado o de un frame |
+| Tamano | hasta **240 px de ancho** y **284 px de alto**; no se escala en la placa |
+| Opcional | si falta o no es valido, se ve el splash de texto de siempre |
+
+Detalle de limites, memoria y secuencia de carga en
+[`docs/arquitectura.md`](docs/arquitectura.md#imagen-de-inicio).
+
+La fase 1a agrega estas cosas juntas:
+
+1. la carpeta `firmware/assets/`, con `splash.gif` por defecto;
+2. en [`CMakeLists.txt`](CMakeLists.txt), despues de `project()`:
+
+   ```cmake
+   spiffs_create_partition_image(assets assets)
+   ```
+
+   **Sin `FLASH_IN_PROJECT`**, a proposito: asi `idf.py flash` no graba
+   `assets` y un flash de desarrollo no borra las imagenes editadas en la
+   placa;
+3. en [`sdkconfig.defaults`](sdkconfig.defaults): `CONFIG_LV_USE_CLIB_MALLOC=y`
+   y `CONFIG_LV_USE_GIF=y`. Hoy LVGL usa un pool propio de 64 KB, donde no entra
+   ni el estado del decodificador;
+4. montar `assets` y mostrar el **primer frame** de `splash.gif` despues del
+   splash de texto, sin demorar el primer frame. La animacion queda para la
+   fase 1b.
+
+Con eso declarado, ESP-IDF 5.5 genera el target `assets-flash`, que graba solo
+esa particion cuando uno lo pide:
+
+```
+idf.py -p COM3 assets-flash
+```
+
+El target lo crea `spiffs_create_partition_image` en
+`components/spiffs/project_include.cmake` de ESP-IDF, lleve o no
+`FLASH_IN_PROJECT`. Sin esa llamada en el CMake del proyecto, no existe. La
+ruta `assets` se resuelve desde `firmware/`, y cada `idf.py build` regenera
+`build/assets.bin` aunque no lo grabe.
+
+Como referencia visual, [`docs/esp32.gif`](docs/esp32.gif) es el ejemplo
+animado elegido. Hoy solo vive en la documentacion: no se empaqueta ni se
+reproduce en el ESP32. **No cumple todavia la regla de tamano**: mide 800x600.
+Para usarlo como `splash.gif` hay que exportarlo a 240 px de ancho; su
+contenido (552x538) queda en 240x234.
 
 ## Recuperacion
 
@@ -124,13 +271,44 @@ Definidas en [`partitions/default.csv`](partitions/default.csv).
 pero cambiar la tabla mas adelante invalida OTA y borra la NVS del campo, asi
 que el espacio se reserva ahora.
 
-`assets` es la particion SPIFFS de este proyecto. El BSP monta SPIFFS por
-etiqueta y su default es `storage`, por eso `sdkconfig.defaults` fija
-`CONFIG_BSP_SPIFFS_PARTITION_LABEL="assets"`.
+`assets` (7M) es la particion SPIFFS de este proyecto. Hoy **no tiene
+contenido propio**: el firmware no la monta ni el build la genera. Queda
+reservada para la imagen de inicio (fase 1a) y, mas adelante, iconos y sonidos.
+En una placa que nunca recibio `assets-flash`, esa zona (`0x900000`-`0xFFFFFF`)
+conserva restos de las particiones de fabrica `ota_0` y `storage`, que la
+pisaban; por eso el firmware no puede asumir que monta ni que lo que lee es
+valido. El BSP monta SPIFFS por
+etiqueta y su default es `storage`, por eso `sdkconfig.defaults` ya fija
+`CONFIG_BSP_SPIFFS_PARTITION_LABEL="assets"`. Cuando se monte, el punto de
+montaje va a ser el default del BSP, `/spiffs`.
+
+`nvs` guarda configuracion del usuario (fase 4 en adelante: redes WiFi). Nunca
+se versiona ni se vuelca al repo.
+
+## Contribuir
+
+Issues y PRs son bienvenidos. Antes de abrir un PR:
+
+- `idf.py build` pasa desde un clone limpio con ESP-IDF 5.5.x oficial.
+- Una rama y un PR por cambio: `feat/...`, `fix/...`, `docs/...`.
+- El arranque no depende de WiFi, de `assets` ni de la microSD. Si faltan, se
+  ve el splash de siempre.
+- Nada de secretos, credenciales WiFi, volcados de flash o NVS, ni binarios de
+  terceros.
+- El PMU sigue en solo lectura. Escribir rieles o configurar la carga va en un
+  PR propio que justifique cada registro.
+- Un dato de hardware nuevo va a [`docs/hardware.md`](docs/hardware.md), con su
+  fuente.
+- Una imagen o sonido nuevo va con su autor y su licencia en [NOTICE](NOTICE),
+  y la licencia tiene que permitir redistribuirlo y modificarlo.
+
+Las reglas de codigo (servicios, apps, hilos y LVGL) estan en
+[`docs/arquitectura.md`](docs/arquitectura.md).
 
 ## Licencia
 
-Codigo propio bajo [MIT](LICENSE). Atribuciones de terceros en [NOTICE](NOTICE).
+Codigo propio bajo [MIT](../LICENSE). Atribuciones de terceros y de los
+recursos graficos (autor y licencia de cada imagen) en [NOTICE](NOTICE).
 
 Este repositorio no redistribuye binarios de Waveshare ni de Xiaozhi, ni
 volcados de flash o NVS de la placa.
