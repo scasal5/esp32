@@ -9,3 +9,4 @@
  * Registra su handler en el loop de eventos por defecto, que tiene que existir.
  */
 esp_err_t app_menu_init(void);
+void app_menu_close(void);

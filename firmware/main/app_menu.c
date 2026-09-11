@@ -1,7 +1,10 @@
 #include "app_menu.h"
 #include "menu_button.h"
+#include "wifi_scan_ui.h"
 
 #include "esp_log.h"
+
+#include <string.h>
 
 #include "bsp/esp-bsp.h"
 #include "bsp/display.h"
@@ -14,27 +17,38 @@ static const char *TAG = "app_menu";
 #define CARD_GAP  14
 
 typedef struct {
+    const char *id;
     const char *icon;
     const char *name;
 } menu_app_t;
 
-/* Todavia no hay apps: cada tarjeta ocupa el lugar de una fase de la hoja de
+/* WiFi abre el scanner. El resto ocupa el lugar de una fase de la hoja de
    ruta y por ahora solo avisa que viene. Texto ASCII: las fuentes Montserrat
    de LVGL no traen acentos. */
 static const menu_app_t k_apps[] = {
-    { LV_SYMBOL_IMAGE,    "Fondo" },
-    { LV_SYMBOL_EYE_OPEN, "Aspecto" },
-    { LV_SYMBOL_WIFI,     "WiFi" },
-    { LV_SYMBOL_SETTINGS, "Ajustes" },
+    { "fondo",   LV_SYMBOL_IMAGE,    "Fondo" },
+    { "aspecto", LV_SYMBOL_EYE_OPEN, "Aspecto" },
+    { "wifi",    LV_SYMBOL_WIFI,     "WiFi" },
+    { "ajustes", LV_SYMBOL_SETTINGS, "Ajustes" },
 };
 
 static lv_obj_t *s_menu = NULL;
 static lv_obj_t *s_hint = NULL;
 
+static void open_wifi_cb(void *arg)
+{
+    LV_UNUSED(arg);
+    wifi_scan_ui_open();
+}
+
 static void card_clicked(lv_event_t *e)
 {
     const menu_app_t *app = lv_event_get_user_data(e);
-    lv_label_set_text_fmt(s_hint, "%s: proximamente", app->name);
+    if (strcmp(app->id, "wifi") == 0) {
+        lv_async_call(open_wifi_cb, NULL);
+    } else {
+        lv_label_set_text_fmt(s_hint, "%s: proximamente", app->name);
+    }
 }
 
 static lv_obj_t *create_card(lv_obj_t *parent, const menu_app_t *app)
@@ -119,6 +133,13 @@ static void menu_close(void)
     s_hint = NULL;
 }
 
+void app_menu_close(void)
+{
+    if (s_menu != NULL) {
+        menu_close();
+    }
+}
+
 /* Corre en la task de LVGL (lv_async_call): el lock ya esta tomado. */
 static void menu_toggle_cb(void *arg)
 {
@@ -127,6 +148,9 @@ static void menu_toggle_cb(void *arg)
     if (s_menu != NULL) {
         menu_close();
         ESP_LOGI(TAG, "menu cerrado");
+    } else if (wifi_scan_ui_is_open()) {
+        wifi_scan_ui_close();
+        ESP_LOGI(TAG, "WiFi cerrado");
     } else {
         menu_open();
         ESP_LOGI(TAG, "menu abierto");

@@ -14,7 +14,9 @@
 #include "menu_button.h"
 #include "pm.h"
 #include "splash_gif.h"
+#include "svc_wifi.h"
 #include "time_console.h"
+#include "wifi_scan_ui.h"
 
 static const char *TAG = "ws183";
 
@@ -93,6 +95,10 @@ void app_main(void)
     } else {
         err = app_menu_init();
         if (err == ESP_OK) {
+            esp_err_t wifi_ui_err = wifi_scan_ui_init();
+            if (wifi_ui_err != ESP_OK) {
+                ESP_LOGW(TAG, "wifi ui: %s", esp_err_to_name(wifi_ui_err));
+            }
             err = menu_button_start();
         }
         if (err != ESP_OK) {
@@ -100,6 +106,10 @@ void app_main(void)
         }
     }
 
-    /* 8. El resto de los servicios (audio, imu, wifi) va aca.
-          Nada de esto debe bloquear el primer frame. */
+    /* 8. WiFi despues del primer frame: inicia STA, pero no conecta ni bloquea
+          el arranque. El scan se dispara solo al abrir la card WiFi. */
+    esp_err_t wifi_err = svc_wifi_start();
+    if (wifi_err != ESP_OK) {
+        ESP_LOGW(TAG, "svc_wifi_start: %s", esp_err_to_name(wifi_err));
+    }
 }
