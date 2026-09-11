@@ -1,0 +1,24 @@
+# Build de ESP-IDF
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+
+# dependencies.lock SI se versiona a proposito: fija las versiones y los hashes
+# exactos que resolvio el Component Manager. Es lo que hace que el build sea
+# reproducible por un tercero, que es el objetivo del proyecto.
+
+# Volcados de la placa: binarios de terceros y datos privados.
+# Nunca entran al repositorio.
+*.bin
+ws183-factory-backup/
+**/nvs*.bin
+
+# Entornos y basura de editor
+.venv/
+venv/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

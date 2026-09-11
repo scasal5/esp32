@@ -33,8 +33,14 @@ Particiones observadas en fábrica:
 
 - Python 3.13
 - ESP-IDF oficial 5.5.x (no vendor "dirty")
-- esptool 5.4 en venv
+- esptool: ESP-IDF 5.5 trae la **4.12**. Los subcomandos con guion
+  (`write-flash`, `chip-id`) solo existen en esptool 5.x; usar siempre la forma
+  con guion bajo (`write_flash`, `chip_id`), valida en las dos
 - target `esp32s3`, flash 16 MB (DIO/QIO 80 MHz), PSRAM octal OPI
+
+En Windows, el alias de Python de Microsoft Store se antepone al Python real y
+hace fallar `install.bat` con error 49. Conviene desactivarlo en *Configuracion
+→ Aplicaciones → Alias de ejecucion de aplicaciones*.
 
 Primero: compilar `idf.py hello_world`.
 
@@ -44,28 +50,42 @@ Usar como referencia (no como repo final):
 - `waveshareteam/ESP32-S3-Touch-LCD-1.83`
 - ejemplos `01_AXP2101` y `02_lvgl_demo_v9`
 
-Meta: validar AXP2101, LCD ST7789P 240x284, touch CST816 y backlight.
+Meta: validar AXP2101, LCD 240x284, touch CST816 y backlight.
+
+El panel es un **ST7789** (`esp_lcd_panel_st7789`). "ST7789P" es el nombre
+comercial de Waveshare; no aparece como simbolo en el SDK ni en el binario.
 
 ## 3) Estructura de repo propio
 
 ```text
 firmware/
-├── README.md
-├── LICENSE
+├── CMakeLists.txt
 ├── NOTICE
+├── README.md
 ├── docs/{hardware.md,flashing.md}
 ├── partitions/default.csv
 ├── sdkconfig.defaults
-├── main/{app_main.c,boot_splash.*,ui/,services/}
+├── main/{app_main.c,boot_splash.*,idf_component.yml,ui/,services/}
 ├── components/
-├── idf_component.yml
-└── scripts/{flash.sh,dump_factory.sh}
+└── scripts/restore_factory.ps1
 ```
 
-Dependencias sugeridas (`idf_component.yml`):
-- `waveshare/esp32_s3_touch_lcd_1_83`
-- `lvgl/lvgl` (v9)
-- `espressif/esp_codec_dev`
+`LICENSE` vive en la raiz del repositorio, no dentro de `firmware/`.
+
+El manifiesto `idf_component.yml` va **dentro de `main/`**: pertenece al
+componente, no al proyecto. Puesto al lado de `main/`, el Component Manager lo
+ignora en silencio y el build falla despues con headers que no aparecen.
+
+En Windows los scripts son `.ps1`. El flasheo de desarrollo es
+`idf.py -p COM3 flash monitor`, y el dump de fabrica ya esta hecho, asi que
+`scripts/` solo necesita la recuperacion.
+
+Dependencias (`main/idf_component.yml`):
+- `waveshare/esp32_s3_touch_lcd_1_83` `^2.0.0`
+- `lvgl/lvgl` `^9` — pin obligatorio: el BSP declara `>=8,<10` y con LVGL 8 no
+  existen `lv_display_t` ni `lv_screen_active()`
+- el resto (`esp_lvgl_port`, `esp_codec_dev`, `esp_lcd_touch_cst816s`,
+  `esp_lcd_panel_io_additions`) entra por transitividad del BSP
 
 ## 4) Particiones propias (16 MB)
 
@@ -77,7 +97,9 @@ Base sugerida:
 - `ota_0` 4M
 - `assets` ~7M
 
-`model` solo cuando se use ESP-SR/WakeNet.
+`model` (952K) se reserva **vacia desde el dia 1**, aunque todavia no se use.
+Cambiar la tabla de particiones mas adelante invalida OTA y borra la NVS de los
+equipos en campo: el espacio se aparta ahora o la migracion es destructiva.
 
 ## 5) Splash de arranque (app, no bootloader)
 

@@ -1,0 +1,10 @@
+dependencies:
+  idf: ">=5.5,<5.6"
+
+  # BSP de la placa. Trae por transitividad lvgl, esp_lvgl_port,
+  # esp_codec_dev, esp_lcd_touch_cst816s y esp_lcd_panel_io_additions.
+  waveshare/esp32_s3_touch_lcd_1_83: "^2.0.0"
+
+  # El BSP declara lvgl ">=8,<10". Si el solver elige la 8, no compilan
+  # ni lv_display_t ni lv_screen_active(). Pineamos la 9 explicitamente.
+  lvgl/lvgl: "^9"
