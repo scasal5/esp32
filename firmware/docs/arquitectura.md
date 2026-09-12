@@ -124,6 +124,10 @@ BOOT siempre significa atras. El lanzador y el `root` de la app viven en
 `lv_layer_top()`, asi que la pantalla de inicio sigue abajo con su reloj
 corriendo y no hay que reconstruirla al volver.
 
+Las transiciones las anima el shell; las apps no. La duracion y la curva son
+tokens de [`ui_theme.h`](../main/ui_theme.h), y mientras una transicion corre el
+shell ignora BOOT y los toques.
+
 ---
 
 ## Servicios y eventos

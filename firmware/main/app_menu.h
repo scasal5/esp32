@@ -21,3 +21,9 @@ void app_menu_show(const os_app_t *const *apps, size_t count,
 void app_menu_hide(void);
 
 bool app_menu_visible(void);
+
+/*
+ * El overlay del lanzador, para que el shell lo anime. Es lo unico que la vista
+ * expone hacia afuera: la animacion no es asunto suyo.
+ */
+lv_obj_t *app_menu_obj(void);
