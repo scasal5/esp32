@@ -144,8 +144,28 @@ static void build_ssid_options(char *out, size_t n)
     }
 }
 
+static esp_err_t send_wait_plate(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_sendstr(req,
+        "<!DOCTYPE html><html><head>"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"2\">"
+        "<title>ws183-os</title>"
+        "<style>body{font-family:sans-serif;background:#101418;color:#F2F4F8;"
+        "margin:24px}</style></head><body>"
+        "<h2>ws183-os</h2>"
+        "<p>Esperando que acepten este celular en la placa.</p>"
+        "</body></html>");
+}
+
 static esp_err_t send_form(httpd_req_t *req)
 {
+    if (!svc_wifi_prov_allowed()) {
+        return send_wait_plate(req);
+    }
+
     char opts[1200];
     char esc[80];
     build_ssid_options(opts, sizeof(opts));
@@ -227,6 +247,12 @@ static esp_err_t send_captive_api(httpd_req_t *req)
 
 static esp_err_t connect_post(httpd_req_t *req)
 {
+    if (!svc_wifi_prov_allowed()) {
+        httpd_resp_set_status(req, "403 Forbidden");
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_sendstr(req, "{\"ok\":false}");
+    }
+
     char body[256];
     int len = httpd_req_recv(req, body, sizeof(body) - 1);
     if (len <= 0) {

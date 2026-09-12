@@ -100,8 +100,11 @@ credenciales viven en NVS (`wifi`) y nunca en el repo.
 
 ### Portal de clave (celular)
 
-El QR `WIFI:` solo une el celular al SoftAP. Cuando entra un cliente, el QR
-pasa a `http://192.168.4.1/` para abrir el formulario.
+El QR `WIFI:` solo une el celular al SoftAP. Un solo cliente a la vez
+(`max_connection = 1`; cualquier otra MAC se desasocia). Cuando asocia, la
+placa muestra su MAC y pide Si/No (30 s visibles; No lo desasocia). Recien
+con Si se genera el segundo QR (`http://192.168.4.1/`). Hasta entonces el
+HTTP del portal responde que hay que esperar en la placa y recarga cada 2 s.
 
 Ese formulario **no redirige**. El submit es `fetch POST /connect` (JSON) y la
 misma pagina queda en carga: un JS pregunta `GET /status` hasta `up` o `fail`.

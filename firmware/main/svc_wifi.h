@@ -20,7 +20,13 @@ typedef enum {
     SVC_WIFI_EVENT_CONNECTED,
     SVC_WIFI_EVENT_CONNECT_FAIL,
     SVC_WIFI_EVENT_PROV_CLIENT,
+    SVC_WIFI_EVENT_PROV_GONE,
 } svc_wifi_event_id_t;
+
+typedef struct {
+    uint8_t mac[6];
+    uint8_t aid;
+} svc_wifi_prov_client_t;
 
 typedef struct {
     char ssid[33];
@@ -54,6 +60,9 @@ void svc_wifi_disconnect(void);
 esp_err_t svc_wifi_prov_start(const char *ssid);
 void svc_wifi_prov_stop(void);
 bool svc_wifi_prov_active(void);
+void svc_wifi_prov_allow(void);
+void svc_wifi_prov_deny(void);
+bool svc_wifi_prov_allowed(void);
 const char *svc_wifi_prov_ap_ssid(void);
 const char *svc_wifi_prov_qr(void);
 const char *svc_wifi_prov_target(void);

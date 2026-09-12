@@ -34,6 +34,10 @@ static bool s_link_fail;
 static bool s_scan_in_progress;
 static bool s_scan_pending;
 static bool s_prov_on;
+static bool s_prov_allowed;
+static bool s_prov_pending;
+static uint8_t s_prov_mac[6];
+static uint8_t s_prov_aid;
 static char s_sta_ssid[33];
 static char s_saved_ssid[33];
 static char s_saved_pass[65];
@@ -208,8 +212,41 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     }
 
     if (event_id == WIFI_EVENT_AP_STACONNECTED) {
-        ESP_LOGI(TAG, "portal client");
-        esp_event_post(SVC_WIFI_EVENT, SVC_WIFI_EVENT_PROV_CLIENT, NULL, 0, 0);
+        const wifi_event_ap_staconnected_t *ev = event_data;
+        if (ev == NULL) {
+            return;
+        }
+        if (s_prov_allowed && memcmp(s_prov_mac, ev->mac, 6) == 0) {
+            ESP_LOGI(TAG, "portal client known");
+            return;
+        }
+        if ((s_prov_pending || s_prov_allowed) &&
+            memcmp(s_prov_mac, ev->mac, 6) != 0) {
+            ESP_LOGW(TAG, "portal client extra, se echa");
+            (void)esp_wifi_deauth_sta(ev->aid);
+            return;
+        }
+        memcpy(s_prov_mac, ev->mac, 6);
+        s_prov_aid = ev->aid;
+        s_prov_pending = true;
+        s_prov_allowed = false;
+        svc_wifi_prov_client_t c;
+        memcpy(c.mac, ev->mac, 6);
+        c.aid = ev->aid;
+        ESP_LOGI(TAG, "portal client " MACSTR " aid=%u", MAC2STR(ev->mac),
+                 (unsigned)ev->aid);
+        esp_event_post(SVC_WIFI_EVENT, SVC_WIFI_EVENT_PROV_CLIENT, &c,
+                       sizeof(c), 0);
+        return;
+    }
+
+    if (event_id == WIFI_EVENT_AP_STADISCONNECTED) {
+        const wifi_event_ap_stadisconnected_t *ev = event_data;
+        if (ev != NULL && s_prov_pending && memcmp(s_prov_mac, ev->mac, 6) == 0 &&
+            !s_prov_allowed) {
+            s_prov_pending = false;
+            esp_event_post(SVC_WIFI_EVENT, SVC_WIFI_EVENT_PROV_GONE, NULL, 0, 0);
+        }
         return;
     }
 
@@ -584,7 +621,7 @@ esp_err_t svc_wifi_prov_start(const char *ssid)
     wifi_config_t ap = { 0 };
     strncpy((char *)ap.ap.ssid, s_ap_ssid, sizeof(ap.ap.ssid) - 1);
     ap.ap.ssid_len = strlen(s_ap_ssid);
-    ap.ap.max_connection = 4;
+    ap.ap.max_connection = 1;
     ap.ap.authmode = WIFI_AUTH_OPEN;
     ap.ap.channel = 1;
     err = esp_wifi_set_config(WIFI_IF_AP, &ap);
@@ -600,12 +637,16 @@ esp_err_t svc_wifi_prov_start(const char *ssid)
     }
 
     s_prov_on = true;
+    s_prov_allowed = false;
+    s_prov_pending = false;
     ESP_LOGI(TAG, "SoftAP %s QR=%s target=%s", s_ap_ssid, s_qr, s_prov_target);
     return ESP_OK;
 }
 
 void svc_wifi_prov_stop(void)
 {
+    s_prov_allowed = false;
+    s_prov_pending = false;
     if (!s_prov_on) {
         wifi_portal_stop();
         return;
@@ -616,6 +657,33 @@ void svc_wifi_prov_stop(void)
         (void)esp_wifi_set_mode(WIFI_MODE_STA);
     }
     ESP_LOGI(TAG, "SoftAP off");
+}
+
+void svc_wifi_prov_allow(void)
+{
+    if (!s_prov_pending) {
+        return;
+    }
+    s_prov_pending = false;
+    s_prov_allowed = true;
+    ESP_LOGI(TAG, "portal allow " MACSTR, MAC2STR(s_prov_mac));
+}
+
+void svc_wifi_prov_deny(void)
+{
+    if (!s_prov_pending && !s_prov_allowed) {
+        return;
+    }
+    uint8_t aid = s_prov_aid;
+    s_prov_pending = false;
+    s_prov_allowed = false;
+    (void)esp_wifi_deauth_sta(aid);
+    ESP_LOGI(TAG, "portal deny aid=%u", (unsigned)aid);
+}
+
+bool svc_wifi_prov_allowed(void)
+{
+    return s_prov_allowed;
 }
 
 bool svc_wifi_prov_active(void)
@@ -644,9 +712,12 @@ static int cmd_wifi(int argc, char **argv)
     (void)argv;
     printf("sta_up=%d connected=%d ssid=%s\n", (int)s_sta_up, (int)s_connected,
            s_sta_ssid[0] ? s_sta_ssid : "-");
-    printf("prov=%d ap=%s target=%s\n", (int)s_prov_on,
+    printf("prov=%d pending=%d allowed=%d ap=%s target=%s\n",
+           (int)s_prov_on, (int)s_prov_pending, (int)s_prov_allowed,
            s_ap_ssid[0] ? s_ap_ssid : "-",
            s_prov_target[0] ? s_prov_target : "-");
+    printf("client=" MACSTR " aid=%u\n", MAC2STR(s_prov_mac),
+           (unsigned)s_prov_aid);
 
     svc_wifi_ap_t list[SVC_WIFI_MAX_RESULTS];
     size_t n = svc_wifi_copy_results(list, SVC_WIFI_MAX_RESULTS);

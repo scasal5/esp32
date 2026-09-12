@@ -117,19 +117,20 @@ Tocar una red abierta no conecta: solo se aceptan redes con clave. Tocar una red
 abre un SoftAP `ws183-XXXX` y un primer QR `WIFI:T:nopass;S:ws183-XXXX;;`.
 
 ```
-QR 1  ──►  ws183-XXXX  ──►  QR 2 http://192.168.4.1/  ──►  clave  ──►  STA
-           el celular       se actualiza al unirse          form      la placa
-           se une al AP     abre el navegador
+QR 1  ──►  ws183-XXXX  ──►  Si en la placa  ──►  QR 2 URL  ──►  clave  ──►  STA
+           el celular       MAC + Si/No          form
+           se une al AP     un solo cliente
 ```
 
-El primer QR solo une el celular al SoftAP. Cuando entra un cliente, la placa
-cambia el QR a la URL del portal para que el segundo escaneo abra el formulario
-con la red elegida y el campo de clave. Recien entonces la placa conecta como STA.
+El primer QR une el celular al SoftAP (un cliente). La placa muestra la MAC y
+pide Si/No. Recien con Si aparece el QR de `http://192.168.4.1/`. No o 30 s
+sin respuesta desasocia ese dispositivo.
 
 El formulario lista las redes con clave del ultimo scan, con la tocada ya elegida, y pide
 la contrasena. Al enviarlo, la placa conecta como STA. La clave se guarda en NVS,
-namespace `wifi`; no se loguea. Al conseguir IP, el SoftAP se apaga y la barra de inicio
-muestra **WiFi**. Cerrar el QR sin escanear no deja el STA asociado.
+namespace `wifi`; no se loguea. El SoftAP sigue hasta que la UI cierra, unos segundos
+despues de tener IP, para que el celular vea el resultado. La barra de inicio muestra
+**WiFi**. Cerrar el QR sin escanear no deja el STA asociado.
 
 BOOT o **Cerrar** corta el portal y vuelve al inicio. Si WiFi no pudo iniciar, la pantalla
 muestra `WiFi no listo` y el resto del firmware sigue funcionando.
@@ -224,9 +225,9 @@ pantalla queda negra, el problema es backlight o PMU, no el USB.
 LVGL mantiene la pantalla, y el boton, la consola y WiFi siguen corriendo en las suyas.
 
 Para probar WiFi: pulsa BOOT, abre la card **WiFi** y espera la lista de SSID con su RSSI.
-Toca una red con clave y aparece el QR. Escanea para unirte al AP; cuando la
-placa detecta el celular, el QR cambia: escanealo de nuevo para abrir el
-formulario, pone la clave y volve a la placa. BOOT o **Cerrar** vuelve al inicio.
+Toca una red con clave y aparece el QR. Escanea para unirte al AP; en la placa
+acepta el dispositivo (MAC). Recien ahi el QR cambia: escanealo de nuevo,
+pone la clave y volve a la placa. BOOT o **Cerrar** vuelve al inicio.
 
 Dos warnings del boot log son cosmeticos y esperados:
 
