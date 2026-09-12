@@ -33,6 +33,16 @@ static bool s_connecting;
 static bool s_link_fail;
 static bool s_scan_in_progress;
 static bool s_scan_pending;
+
+/*
+ * Un scan tarda segundos y su consumidor se puede ir antes: la pantalla de WiFi
+ * se cierra y el WIFI_EVENT_SCAN_DONE llega despues, sin nadie del otro lado.
+ * s_scan_seq sube en cada scan pedido y en cada cancelacion; s_scan_active
+ * guarda el numero del que esta en vuelo. Si al terminar no coinciden, el
+ * resultado era de un scan abandonado: no se guarda ni se publica.
+ */
+static uint32_t s_scan_seq;
+static uint32_t s_scan_active;
 static bool s_prov_on;
 static bool s_prov_allowed;
 static bool s_prov_pending;
@@ -251,6 +261,21 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     }
 
     if (event_id != WIFI_EVENT_SCAN_DONE) {
+        return;
+    }
+
+    /* Scan abandonado: los resultados no le sirven a nadie y publicarlos le
+       hablaria a una pantalla que ya no existe. */
+    bool stale = false;
+    if (take_lock()) {
+        stale = s_scan_active != s_scan_seq;
+        if (stale) {
+            s_scan_in_progress = false;
+        }
+        xSemaphoreGive(s_lock);
+    }
+    if (stale) {
+        ESP_LOGI(TAG, "scan descartado");
         return;
     }
 
@@ -482,6 +507,7 @@ esp_err_t svc_wifi_scan(void)
     }
 
     s_scan_in_progress = true;
+    s_scan_active = ++s_scan_seq;
     xSemaphoreGive(s_lock);
 
     esp_err_t err = scan_start_now();
@@ -490,6 +516,27 @@ esp_err_t svc_wifi_scan(void)
         xSemaphoreGive(s_lock);
     }
     return err;
+}
+
+void svc_wifi_scan_cancel(void)
+{
+    if (!s_inited || !take_lock()) {
+        return;
+    }
+
+    const bool running = s_scan_in_progress;
+    if (running || s_scan_pending) {
+        /* El done que llegue despues ya no coincide con ningun pedido. */
+        s_scan_seq++;
+        s_scan_pending = false;
+    }
+    xSemaphoreGive(s_lock);
+
+    /* Fuera del lock: esp_wifi_scan_stop() dispara el WIFI_EVENT_SCAN_DONE en la
+       task de eventos, que necesita este mismo lock para descartarlo. */
+    if (running) {
+        esp_wifi_scan_stop();
+    }
 }
 
 size_t svc_wifi_copy_results(svc_wifi_ap_t *out, size_t max)

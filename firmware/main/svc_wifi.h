@@ -36,6 +36,13 @@ typedef struct {
 
 esp_err_t svc_wifi_start(void);
 esp_err_t svc_wifi_scan(void);
+
+/*
+ * Abandona el scan en curso: el WIFI_EVENT_SCAN_DONE que llegue despues se
+ * descarta y no se publica SVC_WIFI_EVENT_SCAN_DONE. Lo llama quien pidio el
+ * scan cuando deja de necesitarlo.
+ */
+void svc_wifi_scan_cancel(void);
 size_t svc_wifi_copy_results(svc_wifi_ap_t *out, size_t max);
 bool svc_wifi_connected(void);
 const char *svc_wifi_sta_ssid(void);
