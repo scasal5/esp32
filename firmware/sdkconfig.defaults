@@ -57,6 +57,8 @@ CONFIG_BSP_SPIFFS_PARTITION_LABEL="assets"
 CONFIG_LV_USE_CLIB_MALLOC=y
 # Widget lv_gif, para la imagen de inicio (docs/arquitectura.md).
 CONFIG_LV_USE_GIF=y
+# QR para el SoftAP de provision (WIFI:T:nopass;S:ws183-xxxx;;).
+CONFIG_LV_USE_QRCODE=y
 CONFIG_LV_USE_LOG=y
 CONFIG_LV_COLOR_DEPTH_16=y
 # Sin esto no linkea lv_font_montserrat_20 (por defecto solo viene la 14).

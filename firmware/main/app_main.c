@@ -106,10 +106,12 @@ void app_main(void)
         }
     }
 
-    /* 8. WiFi despues del primer frame: inicia STA, pero no conecta ni bloquea
-          el arranque. El scan se dispara solo al abrir la card WiFi. */
+    /* 8. WiFi despues del primer frame: inicia STA. Si hay credenciales en
+          NVS, intenta reconectar. El scan y el SoftAP se disparan desde la UI. */
     esp_err_t wifi_err = svc_wifi_start();
     if (wifi_err != ESP_OK) {
         ESP_LOGW(TAG, "svc_wifi_start: %s", esp_err_to_name(wifi_err));
+    } else {
+        svc_wifi_register_console();
     }
 }

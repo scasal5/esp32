@@ -27,18 +27,22 @@ El splash deja de ser un texto fijo y pasa a ser la **pantalla de inicio**:
 
 ```
 ┌────────────────────┐
-│ 12:40   WiFi   87% │  barra de estado
-│                    │
+│ 12:40:31   WiFi*   87% │  barra de estado
+│                   USB* │
 │                    │
 │    [ tu imagen ]   │  imagen elegida por el usuario
 │                    │
 │                    │
 └────────────────────┘
-  deslizar a los lados  ->  editar la imagen
-  deslizar hacia abajo  ->  WiFi y ajustes rapidos
+  boton de arriba -> menu
+  boton de abajo  -> apagar
+  Icono de WiFi SOLO si esta conectado*
+  USB si esta conectado*
 ```
 
-Los gestos son una propuesta y se pueden discutir en un issue.
+BOOT (arriba) abre el menu. PWR (abajo) apaga por el AXP2101: el firmware
+no toca ese pin. WiFi en la barra solo aparece con IP; USB, si hay VBUS.
+Los gestos siguen siendo una propuesta.
 
 ### Hoja de ruta
 
@@ -49,7 +53,7 @@ Los gestos son una propuesta y se pueden discutir en un issue.
 | 1b | Animacion de `splash.gif`, con decodificacion y PSRAM medidas en hardware | planeado |
 | 2 | Shell: gestos, barra de estado y registro de apps | planeado |
 | 3 | App *Fondo*: elegir imagen, encuadrarla y dibujar encima | planeado |
-| 4 | WiFi: scan y lista de redes cercanas | hecho; conectar y recordar redes, planeado |
+| 4 | WiFi: scan, QR+SoftAP para la clave, recordar en NVS | hecho |
 | 5 | Subir GIFs desde el celular por la red local | planeado |
 | 6 | Hora por SNTP + RTC; actualizaciones OTA a `ota_0` | planeado |
 | — | CI: cada PR corre `idf.py build` con ESP-IDF 5.5.1 contra `firmware/` | hecho |
@@ -104,16 +108,22 @@ apagado.
 
 ## WiFi
 
-El servicio inicia WiFi en modo STA despues del primer frame, sin conectarse a
-ninguna red ni guardar credenciales. Al abrir la card **WiFi** del carrusel,
-ejecuta un scan asincrono y muestra hasta 16 redes cercanas, ordenadas por
-RSSI, con su SSID y potencia en dBm. Los SSID repetidos se consolidan y se
-conserva la senal mas fuerte; las redes protegidas llevan `*`. Las ocultas
-no se listan. El driver guarda calibracion PHY en NVS, no credenciales.
+El servicio inicia WiFi en modo STA despues del primer frame. Al abrir la card
+**WiFi** del carrusel, ejecuta un scan asincrono y muestra hasta 16 redes
+cercanas, ordenadas por RSSI. Los SSID repetidos se consolidan y se conserva
+la senal mas fuerte; las protegidas llevan `*`. Las ocultas no se listan.
 
-BOOT cierra la lista y vuelve al inicio. Tocar una red no conecta: esa parte,
-igual que NVS para credenciales, queda para otro PR. Si WiFi no pudo iniciar,
+Tocar una red abierta conecta al toque. Tocar una red con clave abre un SoftAP
+`ws183-XXXX` y un QR `WIFI:T:nopass;S:ws183-XXXX;;`. El celular se une al AP,
+el captive portal pide la contrasena (el SSID ya esta elegido) y la placa
+conecta como STA. La clave se guarda en NVS, namespace `wifi`; no se loguea.
+Al conseguir IP, el SoftAP se apaga y la barra de inicio muestra **WiFi**.
+
+BOOT o **Cerrar** corta el portal y vuelve al inicio. Si WiFi no pudo iniciar,
 la pantalla muestra `WiFi no listo` y el resto del firmware sigue funcionando.
+
+Por USB: `wifi`, `wifiscan`, `wifiprov <ssid>`, `wificonnect <ssid> [pass]`,
+`wifistop`.
 
 ## Compilar
 
@@ -188,8 +198,9 @@ No indica un bus colgado: el AXP2101 contesta en ese mismo bus justo despues
 
 Despues de `splash visible` se espera tambien `wifi: STA up`. Para probar el
 scan, pulsa BOOT, abre la card **WiFi** y espera la lista de SSID con su RSSI.
-Otro click de BOOT, o el boton **Cerrar**, vuelve al inicio. El scan no conecta
-ni solicita contrasenas.
+Toca una red con clave: aparece el QR. En el celular, escanea, unete al AP
+`ws183-XXXX`, pone la contrasena y volve a la placa. Otro click de BOOT, o
+**Cerrar**, vuelve al inicio.
 
 ## Personalizar
 
@@ -333,8 +344,9 @@ Issues y PRs son bienvenidos. Antes de abrir un PR:
   fuente.
 - Una imagen o sonido nuevo va con su autor y su licencia en [NOTICE](NOTICE),
   y la licencia tiene que permitir redistribuirlo y modificarlo.
-- El scan WiFi no conecta ni guarda contrasenas; esa funcionalidad va en un PR
-  separado con su namespace NVS.
+- Las credenciales WiFi viven en NVS (`wifi`); no se commitean ni se loguean.
+  El SoftAP de provision es abierto y de corta vida: se apaga al conectar o al
+  cerrar la pantalla.
 
 Las reglas de codigo (servicios, apps, hilos y LVGL) estan en
 [`docs/arquitectura.md`](docs/arquitectura.md).

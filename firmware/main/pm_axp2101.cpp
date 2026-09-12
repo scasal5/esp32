@@ -57,6 +57,7 @@ extern "C" esp_err_t pm_read(pm_status_t *out)
 
     out->present  = s_pmu.isBatteryConnect();
     out->charging = s_pmu.isCharging();
+    out->vbus     = s_pmu.isVbusIn();
     out->percent  = s_pmu.getBatteryPercent();
     out->batt_mv  = s_pmu.getBattVoltage();
     out->vbus_mv  = s_pmu.getVbusVoltage();
@@ -75,7 +76,7 @@ extern "C" void pm_log_status(void)
     }
 
     ESP_LOGI(TAG,
-             "present=%d charging=%d percent=%d batt_mv=%u vbus_mv=%u sys_mv=%u",
-             (int)s.present, (int)s.charging, s.percent,
+             "present=%d charging=%d vbus=%d percent=%d batt_mv=%u vbus_mv=%u sys_mv=%u",
+             (int)s.present, (int)s.charging, (int)s.vbus, s.percent,
              (unsigned)s.batt_mv, (unsigned)s.vbus_mv, (unsigned)s.sys_mv);
 }
