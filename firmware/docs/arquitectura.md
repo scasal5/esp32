@@ -239,4 +239,4 @@ archivo**:
 `idf.py -p COM3 assets-flash`. Ese target **no existe hasta que la fase 1a
 declare** `spiffs_create_partition_image(assets assets)` en `CMakeLists.txt`,
 sin `FLASH_IN_PROJECT`, para que `idf.py flash` no pise lo grabado en la placa
-(ver [README](../README.md#imagen-de-inicio-planeado-fases-1a-y-1b)).
+(ver [README](../README.md#imagen-de-inicio)).
