@@ -1,6 +1,6 @@
 #include "wifi_scan_ui.h"
 
-#include "app_menu.h"
+#include "shell.h"
 #include "svc_wifi.h"
 #include "ui_theme.h"
 
@@ -16,7 +16,6 @@ static const char *TAG = "wifi_ui";
 
 #define PORTAL_URL "http://192.168.4.1/"
 
-static lv_obj_t *s_screen;
 static lv_obj_t *s_status;
 static lv_obj_t *s_list;
 static lv_obj_t *s_qr_box;
@@ -25,7 +24,6 @@ static lv_obj_t *s_hint;
 static lv_obj_t *s_ask;
 static lv_obj_t *s_ask_id;
 static lv_timer_t *s_timer;
-static bool s_open;
 static bool s_qr_mode;
 static bool s_asking;
 static uint32_t s_ask_ticks;
@@ -193,7 +191,7 @@ static void net_clicked(lv_event_t *event)
 
 static void wifi_scan_render(void)
 {
-    if (!s_open || s_list == NULL || s_qr_mode) {
+    if (s_list == NULL || s_qr_mode) {
         return;
     }
 
@@ -223,7 +221,7 @@ static void wifi_scan_render(void)
 static void close_later(lv_timer_t *timer)
 {
     lv_timer_delete(timer);
-    wifi_scan_ui_close();
+    shell_close_app();
 }
 
 static void wifi_scan_tick(lv_timer_t *timer)
@@ -274,16 +272,12 @@ static void wifi_scan_tick(lv_timer_t *timer)
     wifi_scan_render();
 }
 
-static void close_async_cb(void *arg)
-{
-    LV_UNUSED(arg);
-    wifi_scan_ui_close();
-}
-
+/* La app no se cierra sola: le pide al shell volver a la pantalla de inicio,
+   igual que si el usuario apretara BOOT. */
 static void close_clicked(lv_event_t *event)
 {
     LV_UNUSED(event);
-    lv_async_call(close_async_cb, NULL);
+    shell_close_app();
 }
 
 /*
@@ -302,29 +296,23 @@ static void style_button(lv_obj_t *btn, bool primary)
     lv_obj_set_style_text_font(btn, UI_FONT_BODY, 0);
 }
 
-static void create_screen(void)
+/* Todo cuelga de root. El fondo, la capa y el bloqueo de toques los pone el
+   shell: esta pantalla no sabe donde la estan mostrando. */
+static void build(lv_obj_t *root)
 {
-    s_screen = lv_obj_create(lv_layer_top());
-    lv_obj_remove_style_all(s_screen);
-    lv_obj_set_size(s_screen, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(s_screen, UI_COL_BG, 0);
-    lv_obj_set_style_bg_opa(s_screen, LV_OPA_COVER, 0);
-    lv_obj_add_flag(s_screen, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_remove_flag(s_screen, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *title = lv_label_create(s_screen);
+    lv_obj_t *title = lv_label_create(root);
     lv_label_set_text(title, "WiFi");
     lv_obj_set_style_text_font(title, UI_FONT_TITLE, 0);
     lv_obj_set_style_text_color(title, UI_COL_TEXT, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
 
-    s_status = lv_label_create(s_screen);
+    s_status = lv_label_create(root);
     lv_label_set_text(s_status, "buscando...");
     lv_obj_set_style_text_color(s_status, UI_COL_TEXT_MUTED, 0);
     lv_obj_set_style_text_font(s_status, UI_FONT_BODY, 0);
     lv_obj_align(s_status, LV_ALIGN_TOP_MID, 0, 36);
 
-    s_list = lv_list_create(s_screen);
+    s_list = lv_list_create(root);
     lv_obj_set_size(s_list, LV_PCT(100), 150);
     lv_obj_align(s_list, LV_ALIGN_CENTER, 0, 4);
     lv_obj_set_style_bg_color(s_list, UI_COL_SURFACE, 0);
@@ -332,7 +320,7 @@ static void create_screen(void)
     lv_obj_set_style_radius(s_list, UI_RADIUS, 0);
     lv_obj_set_style_border_width(s_list, 0, 0);
 
-    s_qr_box = lv_obj_create(s_screen);
+    s_qr_box = lv_obj_create(root);
     lv_obj_remove_style_all(s_qr_box);
     lv_obj_set_size(s_qr_box, LV_PCT(100), 180);
     lv_obj_align(s_qr_box, LV_ALIGN_CENTER, 0, 4);
@@ -352,7 +340,7 @@ static void create_screen(void)
     lv_obj_set_style_text_font(s_hint, UI_FONT_BODY, 0);
     lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, 0);
 
-    s_ask = lv_obj_create(s_screen);
+    s_ask = lv_obj_create(root);
     lv_obj_remove_style_all(s_ask);
     lv_obj_set_size(s_ask, LV_PCT(100), 180);
     lv_obj_align(s_ask, LV_ALIGN_CENTER, 0, 4);
@@ -391,7 +379,7 @@ static void create_screen(void)
     lv_label_set_text(no_l, "No");
     lv_obj_center(no_l);
 
-    lv_obj_t *close = lv_button_create(s_screen);
+    lv_obj_t *close = lv_button_create(root);
     lv_obj_set_size(close, 92, 36);
     lv_obj_align(close, LV_ALIGN_BOTTOM_MID, 0, -12);
     lv_obj_add_event_cb(close, close_clicked, LV_EVENT_CLICKED, NULL);
@@ -430,13 +418,8 @@ esp_err_t wifi_scan_ui_init(void)
                                       on_wifi_event, NULL);
 }
 
-void wifi_scan_ui_open(void)
+static void wifi_open(lv_obj_t *root)
 {
-    if (s_open) {
-        return;
-    }
-
-    app_menu_close();
     s_scan_done = false;
     s_connected = false;
     s_connect_fail = false;
@@ -444,8 +427,8 @@ void wifi_scan_ui_open(void)
     s_prov_gone = false;
     s_asking = false;
     s_qr_mode = false;
-    s_open = true;
-    create_screen();
+
+    build(root);
 
     esp_err_t err = svc_wifi_scan();
     if (err != ESP_OK) {
@@ -454,20 +437,17 @@ void wifi_scan_ui_open(void)
     }
 }
 
-void wifi_scan_ui_close(void)
+/*
+ * El shell borra el root apenas vuelve de aca, y con el todos los objetos. Lo
+ * que hay que soltar a mano es lo que no cuelga de root: el SoftAP y el timer.
+ */
+static void wifi_close(void)
 {
-    if (!s_open) {
-        return;
-    }
     svc_wifi_prov_stop();
     if (s_timer != NULL) {
         lv_timer_delete(s_timer);
         s_timer = NULL;
     }
-    if (s_screen != NULL) {
-        lv_obj_delete(s_screen);
-    }
-    s_screen = NULL;
     s_status = NULL;
     s_list = NULL;
     s_qr_box = NULL;
@@ -477,10 +457,12 @@ void wifi_scan_ui_close(void)
     s_ask_id = NULL;
     s_asking = false;
     s_qr_mode = false;
-    s_open = false;
 }
 
-bool wifi_scan_ui_is_open(void)
-{
-    return s_open;
-}
+const os_app_t app_wifi = {
+    .id = "wifi",
+    .icon = LV_SYMBOL_WIFI,
+    .name = "WiFi",
+    .open = wifi_open,
+    .close = wifi_close,
+};

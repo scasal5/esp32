@@ -1,12 +1,23 @@
 #pragma once
 
-#include "esp_err.h"
+/*
+ * Lanzador: el carrusel de tarjetas. Es solo la vista del registro de apps; que
+ * pasa al tocar una tarjeta lo decide el shell.
+ */
+
+#include <stdbool.h>
+#include <stddef.h>
+
+#include "shell.h"
 
 /*
- * Menu de apps: un carrusel sobre la pantalla actual, en lv_layer_top().
- * UI_EVENT_MENU (click en BOOT) lo abre y lo cierra.
- *
- * Registra su handler en el loop de eventos por defecto, que tiene que existir.
+ * Dibuja el carrusel con las apps registradas. `on_pick` se llama ya agendado
+ * en la task de LVGL, asi que puede borrar el lanzador. Las apps sin `open`
+ * no llaman a `on_pick`: la tarjeta avisa que la app todavia no existe.
  */
-esp_err_t app_menu_init(void);
-void app_menu_close(void);
+void app_menu_show(const os_app_t *const *apps, size_t count,
+                   void (*on_pick)(const os_app_t *app));
+
+void app_menu_hide(void);
+
+bool app_menu_visible(void);

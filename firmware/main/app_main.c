@@ -8,17 +8,37 @@
 #include <stdlib.h>
 #include <time.h>
 
-#include "app_menu.h"
 #include "board_rtc.h"
 #include "boot_splash.h"
 #include "menu_button.h"
 #include "pm.h"
+#include "shell.h"
 #include "splash_gif.h"
 #include "svc_wifi.h"
 #include "time_console.h"
 #include "wifi_scan_ui.h"
 
 static const char *TAG = "ws183";
+
+/*
+ * Tarjetas que todavia no son una app. Sin open() el shell no las abre: quedan
+ * en el lanzador avisando que vienen. Cada una es una fase de la hoja de ruta.
+ */
+#if CONFIG_WS183_APP_FONDO
+static const os_app_t app_fondo = {
+    .id = "fondo", .icon = LV_SYMBOL_IMAGE, .name = "Fondo",
+};
+#endif
+#if CONFIG_WS183_APP_ASPECTO
+static const os_app_t app_aspecto = {
+    .id = "aspecto", .icon = LV_SYMBOL_EYE_OPEN, .name = "Aspecto",
+};
+#endif
+#if CONFIG_WS183_APP_AJUSTES
+static const os_app_t app_ajustes = {
+    .id = "ajustes", .icon = LV_SYMBOL_SETTINGS, .name = "Ajustes",
+};
+#endif
 
 void app_main(void)
 {
@@ -86,23 +106,38 @@ void app_main(void)
            arranque. */
     time_console_start();
 
-    /* 7c. Boton BOOT -> UI_EVENT_MENU -> carrusel de apps. El loop de eventos
-           por defecto lo va a usar tambien el WiFi (fase 4). Si falla, la
-           placa sigue sin menu. */
+    /* 7c. Shell: BOOT publica UI_EVENT_MENU y el shell decide si abre el
+           lanzador, lo cierra o cierra la app. Las apps se registran aca, a
+           mano y detras de su opcion de Kconfig: quien lee este archivo ve
+           todo lo que arranca. Si algo falla, la placa se queda sin menu pero
+           sigue mostrando la pantalla de inicio. */
     err = esp_event_loop_create_default();
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGW(TAG, "event loop: %s", esp_err_to_name(err));
     } else {
-        err = app_menu_init();
+        err = shell_init();
         if (err == ESP_OK) {
+#if CONFIG_WS183_APP_FONDO
+            shell_register_app(&app_fondo);
+#endif
+#if CONFIG_WS183_APP_ASPECTO
+            shell_register_app(&app_aspecto);
+#endif
+#if CONFIG_WS183_APP_WIFI
             esp_err_t wifi_ui_err = wifi_scan_ui_init();
             if (wifi_ui_err != ESP_OK) {
                 ESP_LOGW(TAG, "wifi ui: %s", esp_err_to_name(wifi_ui_err));
+            } else {
+                shell_register_app(&app_wifi);
             }
+#endif
+#if CONFIG_WS183_APP_AJUSTES
+            shell_register_app(&app_ajustes);
+#endif
             err = menu_button_start();
         }
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "menu: %s", esp_err_to_name(err));
+            ESP_LOGW(TAG, "shell: %s", esp_err_to_name(err));
         }
     }
 
