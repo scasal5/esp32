@@ -65,30 +65,39 @@ firmware/
 │   ├── svc_storage/        monta assets y microSD
 │   ├── svc_wifi/           escaneo, conexion y redes guardadas
 │   ├── svc_time/           SNTP + RTC (hoy main/board_rtc_pcf85063.c)
-│   ├── shell/              inicio, gestos, barra de estado, registro de apps
+│   ├── shell/              navegacion y registro de apps (hoy main/shell.c)
 │   ├── app_fondo/          elegir, encuadrar y dibujar la imagen de inicio
 │   └── app_wifi/           lista de redes y conexion
 └── assets/                 contenido de la particion assets
 ```
 
-Hoy todo vive en `main/`: no hay `components/` propios todavia. Los prefijos
-`svc_` y `app_` dicen a que capa pertenece cada componente con solo leer el
-nombre. Mover `pm` a `components/svc_pm/` es el primer paso de la fase 2, no un
-requisito para la fase 1.
+Hoy todo vive en `main/`, incluido el shell: no hay `components/` propios
+todavia. Los prefijos `svc_` y `app_` dicen a que capa pertenece cada componente
+con solo leer el nombre. La mudanza a `components/` es un PR mecanico aparte, sin
+cambios de comportamiento; mezclarla con logica nueva hace el diff imposible de
+revisar.
+
+`main/Kconfig.projbuild` ya existe, con una opcion por app. El build tiene que
+pasar con todas apagadas: en ese caso el lanzador queda vacio y el resto del
+firmware no se entera.
 
 ---
 
 ## Contrato de una app
 
+Implementado en [`main/shell.h`](../main/shell.h) y [`main/shell.c`](../main/shell.c).
+
 ```c
 typedef struct {
     const char *id;                /* "fondo": clave en NVS y prefijo de logs */
+    const char *icon;              /* simbolo LVGL para la tarjeta */
     const char *name;              /* texto visible en el shell */
     void (*open)(lv_obj_t *root);  /* construye la UI dentro de root */
     void (*close)(void);           /* libera lo que no cuelga de root */
 } os_app_t;
 
 void shell_register_app(const os_app_t *app);
+void shell_close_app(void);
 ```
 
 - El registro es explicito, desde `app_main.c` y detras de su opcion de Kconfig.
@@ -97,6 +106,23 @@ void shell_register_app(const os_app_t *app);
 - Todo objeto que crea la app cuelga de `root`, y el shell borra `root` al salir.
   Los `lv_timer` no dependen de ningun objeto: la app los guarda y los borra en
   `close`, o siguen corriendo contra objetos que ya no existen.
+- **La app no sabe quien la presenta.** No conoce el lanzador, ni la capa de LVGL
+  en la que vive, ni el fondo del `root`: eso lo pone el shell. Para irse llama a
+  `shell_close_app()`, que es lo mismo que si el usuario apretara BOOT.
+- Con `open == NULL` la tarjeta aparece en el lanzador pero no abre nada. Es como
+  entran las fases de la hoja de ruta que todavia no existen.
+
+### Navegacion
+
+```
+inicio  --BOOT-->  lanzador  --toque-->  app
+   ^                   |                  |
+   +-------BOOT--------+--------BOOT------+
+```
+
+BOOT siempre significa atras. El lanzador y el `root` de la app viven en
+`lv_layer_top()`, asi que la pantalla de inicio sigue abajo con su reloj
+corriendo y no hay que reconstruirla al volver.
 
 ---
 

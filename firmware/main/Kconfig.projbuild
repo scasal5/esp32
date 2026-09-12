@@ -1,0 +1,35 @@
+menu "ws183-os"
+
+    comment "Cada app se registra en app_main.c detras de su opcion."
+
+    config WS183_APP_FONDO
+        bool "App Fondo"
+        default y
+        help
+            Tarjeta "Fondo" en el lanzador: elegir la imagen de inicio,
+            encuadrarla y dibujar encima (fase 3). Todavia no abre nada; la
+            tarjeta solo avisa que viene.
+
+    config WS183_APP_ASPECTO
+        bool "App Aspecto"
+        default y
+        help
+            Tarjeta "Aspecto" en el lanzador. Todavia no abre nada; la tarjeta
+            solo avisa que viene.
+
+    config WS183_APP_WIFI
+        bool "App WiFi"
+        default y
+        help
+            Tarjeta "WiFi": scan de redes cercanas, QR y SoftAP de provision.
+            Apagarla saca la tarjeta y el handler de eventos de svc_wifi; el
+            servicio de WiFi y los comandos de consola siguen andando.
+
+    config WS183_APP_AJUSTES
+        bool "App Ajustes"
+        default y
+        help
+            Tarjeta "Ajustes" en el lanzador. Todavia no abre nada; la tarjeta
+            solo avisa que viene.
+
+endmenu

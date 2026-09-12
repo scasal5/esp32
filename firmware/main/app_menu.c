@@ -1,58 +1,42 @@
 #include "app_menu.h"
-#include "menu_button.h"
 #include "ui_theme.h"
-#include "wifi_scan_ui.h"
-
-#include "esp_log.h"
-
-#include <string.h>
 
 #include "bsp/esp-bsp.h"
-#include "bsp/display.h"
 #include "lvgl.h"
-
-static const char *TAG = "app_menu";
 
 #define CARD_W    116
 #define CARD_H    136
 #define CARD_GAP  14
 
-typedef struct {
-    const char *id;
-    const char *icon;
-    const char *name;
-} menu_app_t;
-
-/* WiFi abre el scanner. El resto ocupa el lugar de una fase de la hoja de
-   ruta y por ahora solo avisa que viene. Texto ASCII: las fuentes Montserrat
-   de LVGL no traen acentos. */
-static const menu_app_t k_apps[] = {
-    { "fondo",   LV_SYMBOL_IMAGE,    "Fondo" },
-    { "aspecto", LV_SYMBOL_EYE_OPEN, "Aspecto" },
-    { "wifi",    LV_SYMBOL_WIFI,     "WiFi" },
-    { "ajustes", LV_SYMBOL_SETTINGS, "Ajustes" },
-};
-
 static lv_obj_t *s_menu = NULL;
 static lv_obj_t *s_hint = NULL;
+static void (*s_on_pick)(const os_app_t *app) = NULL;
 
-static void open_wifi_cb(void *arg)
+/* Agendado desde el toque: para cuando corre, el shell puede borrar el
+   lanzador sin sacarle el piso al evento que lo disparo. */
+static void pick_async(void *arg)
 {
-    LV_UNUSED(arg);
-    wifi_scan_ui_open();
+    if (s_on_pick != NULL) {
+        s_on_pick((const os_app_t *)arg);
+    }
 }
 
 static void card_clicked(lv_event_t *e)
 {
-    const menu_app_t *app = lv_event_get_user_data(e);
-    if (strcmp(app->id, "wifi") == 0) {
-        lv_async_call(open_wifi_cb, NULL);
-    } else {
+    const os_app_t *app = lv_event_get_user_data(e);
+
+    /* Sin open() la tarjeta ocupa el lugar de una fase de la hoja de ruta y
+       solo avisa que viene. Texto ASCII: las fuentes Montserrat de LVGL no
+       traen acentos. */
+    if (app->open == NULL) {
         lv_label_set_text_fmt(s_hint, "%s: proximamente", app->name);
+        return;
     }
+
+    lv_async_call(pick_async, (void *)app);
 }
 
-static lv_obj_t *create_card(lv_obj_t *parent, const menu_app_t *app)
+static lv_obj_t *create_card(lv_obj_t *parent, const os_app_t *app)
 {
     lv_obj_t *card = lv_obj_create(parent);
     lv_obj_remove_style_all(card);
@@ -66,7 +50,7 @@ static lv_obj_t *create_card(lv_obj_t *parent, const menu_app_t *app)
     lv_obj_set_style_pad_row(card, 10, 0);
 
     lv_obj_t *icon = lv_label_create(card);
-    lv_label_set_text(icon, app->icon);
+    lv_label_set_text(icon, app->icon != NULL ? app->icon : LV_SYMBOL_FILE);
     lv_obj_set_style_text_font(icon, UI_FONT_DISPLAY, 0);
     lv_obj_set_style_text_color(icon, UI_COL_TEXT, 0);
 
@@ -80,8 +64,15 @@ static lv_obj_t *create_card(lv_obj_t *parent, const menu_app_t *app)
     return card;
 }
 
-static void menu_open(void)
+void app_menu_show(const os_app_t *const *apps, size_t count,
+                   void (*on_pick)(const os_app_t *app))
 {
+    if (s_menu != NULL) {
+        return;
+    }
+
+    s_on_pick = on_pick;
+
     /* Capa superior: tapa la pantalla de inicio sin tocarla, y la hora sigue
        corriendo debajo. */
     s_menu = lv_obj_create(lv_layer_top());
@@ -116,8 +107,8 @@ static void menu_open(void)
     lv_obj_add_flag(row, LV_OBJ_FLAG_SCROLL_ONE);
     lv_obj_set_scrollbar_mode(row, LV_SCROLLBAR_MODE_OFF);
 
-    for (size_t i = 0; i < sizeof(k_apps) / sizeof(k_apps[0]); i++) {
-        create_card(row, &k_apps[i]);
+    for (size_t i = 0; i < count; i++) {
+        create_card(row, apps[i]);
     }
     lv_obj_update_snap(row, LV_ANIM_OFF);
 
@@ -128,57 +119,17 @@ static void menu_open(void)
     lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -20);
 }
 
-static void menu_close(void)
+void app_menu_hide(void)
 {
+    if (s_menu == NULL) {
+        return;
+    }
     lv_obj_delete(s_menu);
     s_menu = NULL;
     s_hint = NULL;
 }
 
-void app_menu_close(void)
+bool app_menu_visible(void)
 {
-    if (s_menu != NULL) {
-        menu_close();
-    }
-}
-
-/* Corre en la task de LVGL (lv_async_call): el lock ya esta tomado. */
-static void menu_toggle_cb(void *arg)
-{
-    LV_UNUSED(arg);
-
-    if (s_menu != NULL) {
-        menu_close();
-        ESP_LOGI(TAG, "menu cerrado");
-    } else if (wifi_scan_ui_is_open()) {
-        wifi_scan_ui_close();
-        ESP_LOGI(TAG, "WiFi cerrado");
-    } else {
-        menu_open();
-        ESP_LOGI(TAG, "menu abierto");
-    }
-}
-
-/*
- * Corre en la task del loop de eventos por defecto, que tiene 2304 bytes de
- * stack: no alcanza para construir la UI. Solo agenda el cambio en la task de
- * LVGL, que tiene el stack y el contexto correctos.
- */
-static void on_ui_event(void *arg, esp_event_base_t base, int32_t id, void *data)
-{
-    (void)arg;
-    (void)base;
-    (void)id;
-    (void)data;
-
-    /* lv_async_call tambien es API de LVGL: va con el lock. */
-    if (bsp_display_lock(0)) {
-        lv_async_call(menu_toggle_cb, NULL);
-        bsp_display_unlock();
-    }
-}
-
-esp_err_t app_menu_init(void)
-{
-    return esp_event_handler_register(UI_EVENT, UI_EVENT_MENU, on_ui_event, NULL);
+    return s_menu != NULL;
 }
