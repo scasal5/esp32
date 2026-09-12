@@ -26,6 +26,12 @@ static lv_obj_t *s_usb = NULL;
 static lv_obj_t *s_bg = NULL;
 static lv_draw_buf_t *s_bg_buf = NULL;
 static lv_obj_t *s_gif = NULL;
+
+/* El estado vale aunque todavia no haya GIF: si Fondo esta abierta y le subis
+   uno, el objeto nace mientras la home sigue tapada y tiene que nacer en pausa.
+   Sin esto, el fondo nuevo anima debajo del overlay, que es justo lo que
+   home_screen_pause_bg() existe para no pagar. */
+static bool s_bg_paused = false;
 static time_t s_shown = -1;
 static bool s_wifi_shown = true;
 static bool s_usb_shown = true;
@@ -110,6 +116,11 @@ void home_screen_set_gif(lv_obj_t *gif)
     }
     lv_obj_center(gif);
     lv_obj_move_to_index(gif, 0);
+
+    /* gif_from_mem() lo deja andando: si la home esta tapada, se frena ya. */
+    if (s_bg_paused) {
+        lv_gif_pause(gif);
+    }
 }
 
 /*
@@ -121,6 +132,7 @@ void home_screen_set_gif(lv_obj_t *gif)
  */
 void home_screen_pause_bg(bool paused)
 {
+    s_bg_paused = paused;
     if (s_gif == NULL) {
         return;
     }

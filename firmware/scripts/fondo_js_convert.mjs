@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from 'fs';
 
-const W=240,H=284,MAX=1048576,MIN_CS=7,PAL_N=128,BG=10;
+const W=240,H=284,MAX=1048576,MIN_CS=7,PAL_N=128,BG=10,DIM=204/255;
 
 function coverNearest(src, sw, sh){
   const scale=Math.max(W/sw, H/sh);
@@ -255,6 +255,17 @@ console.timeEnd('compose');
 console.time('scale');
 frames = frames.map(fr=>({delay:fr.delay, rgba:coverNearest(fr.rgba, fr.w, fr.h)}));
 console.timeEnd('scale');
+/* Mismo atenuado que main/fondo_form.html y scripts/gif_to_panel.py. Sin esto
+   este script saca un GIF mas claro que los otros dos y parece que el encoder
+   se rompio. */
+for(const fr of frames){
+  const d=fr.rgba;
+  for(let i=0;i<d.length;i+=4){
+    d[i]=Math.round(d[i]*DIM+BG*(1-DIM));
+    d[i+1]=Math.round(d[i+1]*DIM+BG*(1-DIM));
+    d[i+2]=Math.round(d[i+2]*DIM+BG*(1-DIM));
+  }
+}
 console.time('pal');
 const pal = palFromFrames(frames);
 console.timeEnd('pal');

@@ -8,11 +8,17 @@
 /*
  * Arranque de la pantalla de inicio.
  *
- * Una task propia monta assets, lee BSP_SPIFFS_MOUNT_POINT/splash.gif a PSRAM,
- * decodifica el frame 0 y lo convierte una sola vez en fondo: mas chico,
- * desenfocado y oscurecido. Despues reemplaza el splash de texto por la
- * pantalla de inicio (fondo + hora + bateria). Sin GIF usable, la pantalla de
- * inicio sale igual, sin fondo. Llamar despues de encender el backlight.
+ * Una task propia monta assets y busca fondo, en este orden:
+ *
+ *   - BSP_SPIFFS_MOUNT_POINT/splash.png: se decodifica y se convierte en un
+ *     fondo estatico, mas chico, desenfocado y oscurecido;
+ *   - BSP_SPIFFS_MOUNT_POINT/splash.gif: se lee entero a PSRAM y queda como
+ *     fondo animado a tamano completo, en RGB565 y en loop. El archivo y el
+ *     objeto viven mientras el fondo exista: lv_gif no copia el buffer.
+ *
+ * Despues reemplaza el splash de texto por la pantalla de inicio (fondo + hora
+ * + bateria). Sin fondo usable la pantalla de inicio sale igual, sin fondo.
+ * Llamar despues de encender el backlight.
  */
 void splash_gif_start(void);
 

@@ -401,19 +401,35 @@ static esp_err_t install_gif(const uint8_t *data, size_t len)
         heap_caps_free(nb);
         return ESP_FAIL;
     }
-    lv_obj_t *gif = gif_from_mem(nb, len);
-    if (gif == NULL) {
-        bsp_display_unlock();
-        heap_caps_free(nb);
-        return ESP_FAIL;
-    }
-    home_screen_set_gif(gif);
+
+    /*
+     * Primero se borra el fondo anterior, despues se crea el nuevo. s_dsc es
+     * uno solo: si el objeto nuevo se crea antes, por un rato hay dos lv_gif
+     * vivos apuntando al mismo descriptor, con el `data` ya pisado por el
+     * segundo. Hoy pasa entero bajo el lock y no explota, pero es el accidente
+     * clasico del segundo upload.
+     */
+    home_screen_set_gif(NULL);
     uint8_t *old = s_buf;
-    s_buf = nb;
+    s_buf = NULL;
+
+    lv_obj_t *gif = gif_from_mem(nb, len);
+    if (gif != NULL) {
+        home_screen_set_gif(gif);
+        s_buf = nb;
+    }
     bsp_display_unlock();
+
+    /* El archivo viejo recien se libera con su objeto ya borrado. */
     if (old != NULL) {
         heap_caps_free(old);
     }
+    if (gif == NULL) {
+        heap_caps_free(nb);
+        ESP_LOGW(TAG, "el GIF nuevo no cargo; la home queda sin fondo");
+        return ESP_FAIL;
+    }
+
     ESP_LOGI(TAG, "fondo gif %s (%u bytes)", SPLASH_PATH, (unsigned)len);
     return ESP_OK;
 }
@@ -433,8 +449,16 @@ static esp_err_t install_png(const uint8_t *data, size_t len)
         lv_draw_buf_destroy(bg);
         return ESP_FAIL;
     }
+    /* Borra el lv_gif que hubiera. Con el objeto muerto, el archivo del GIF que
+       vive en PSRAM (hasta 1 MB) no lo necesita nadie mas. */
     home_screen_set_bg(bg);
+    uint8_t *old = s_buf;
+    s_buf = NULL;
     bsp_display_unlock();
+    if (old != NULL) {
+        heap_caps_free(old);
+    }
+
     ESP_LOGI(TAG, "fondo png %s (%u bytes)", SPLASH_PNG, (unsigned)len);
     return ESP_OK;
 }
