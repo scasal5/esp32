@@ -199,16 +199,22 @@ Comportamiento heredado de AnimatedGIF, la libreria que usa `lv_gif`:
 
 | | Maximo | Donde |
 |---|---|---|
-| Archivo GIF | limite de tamano (1 MB) | PSRAM; se libera apenas queda armado el fondo |
-| Framebuffer de `lv_gif` | 240x284x4 = 272 KB en ARGB8888 | PSRAM |
+| Archivo GIF | limite de tamano (1 MB) | PSRAM; **vive mientras exista el objeto**, porque `lv_gif` no copia el buffer |
+| Framebuffer de `lv_gif` | 240x284x2 = 136 KB en RGB565 | PSRAM |
 | Estado de AnimatedGIF | unos 24 KB, dentro del objeto | PSRAM |
-| Fondo derivado | 3/5 del frame, ARGB8888 | PSRAM; vive con la pantalla de inicio |
+| Fondo derivado de un PNG | 3/5 del PNG, ARGB8888 | PSRAM; vive con la pantalla de inicio |
 
-El framebuffer se pide en `LV_COLOR_FORMAT_ARGB8888` con
-`lv_gif_set_color_format()` **antes** de `lv_gif_set_src()`. Duplica la memoria
-frente a RGB565 (136 KB) y se paga a proposito: es el unico formato en el que
-`lv_gif` deja el indice transparente del GIF como alfa 0, y sin eso el fondo
-llega con el color de relleno pegado.
+El framebuffer se pide en `LV_COLOR_FORMAT_RGB565` con
+`lv_gif_set_color_format()` **antes** de `lv_gif_set_src()`: es el formato del
+panel, asi que dibujar es una copia y no una conversion.
+
+ARGB8888 solo sirve para que el indice transparente llegue como alfa 0, y los
+fondos que entran por Fondo no lo usan: el conversor rellena los 240x284
+completos. Medido en la placa, ARGB8888 con `LV_OPA_80` daba 134 ms por frame y
+RGB565 opaco da 109, con la mitad de bytes por frame. El atenuado que antes
+hacia `LV_OPA_80` lo hornean los conversores
+(`out = v * 204/255 + 10 * (1 - 204/255)`), asi que el aspecto es el mismo y no
+se paga una mezcla por pixel en cada frame.
 
 ### Configuracion necesaria
 
@@ -248,24 +254,26 @@ Implementada en [`main/splash_gif.c`](../main/splash_gif.c). Asi funciona hoy:
    - validacion de la cabecera a mano: firma de 6 bytes y ancho y alto en los
      bytes 6..9, little-endian, dentro de los limites.
 3. Con `bsp_display_lock()` tomado:
-   - `lv_gif_create()` oculto y `lv_gif_set_color_format(gif, ARGB8888)`;
+   - `lv_gif_create()` y `lv_gif_set_color_format(gif, RGB565)`;
    - `lv_gif_set_src(gif, &dsc)`, con un `lv_image_dsc_t` estatico que apunta al
      buffer. `lv_gif` guarda los punteros sin copiar: `dsc` y el buffer tienen que
      vivir tanto como el objeto, asi que `dsc` no puede estar en el stack. Esta
      llamada **decodifica el frame 0 y ademas arranca el timer** de la animacion;
-   - `lv_gif_pause(gif)` en la misma seccion bloqueada: el timer no llega a correr;
+   - `lv_gif_set_loop_count(gif, 0)`: 0 es infinito. Va **despues** de
+     `set_src()`, que lo pisa con el valor del archivo;
    - si `lv_gif_is_loaded(gif)` es falso: borrar el objeto, liberar el buffer y
      seguir sin fondo.
-4. Sin el lock, porque el objeto esta oculto y en pausa y nadie escribe su
-   framebuffer: el frame 0 se reduce a 3/5 por promedio de area con alfa
-   premultiplicado, se desenfoca con un blur de caja separable de radio 3 y se
-   atenua al 60 %. Sale un `lv_draw_buf_t` ARGB8888 nuevo.
-5. Se borra el `lv_gif`, se libera el archivo y, con el lock tomado, el splash de
-   texto deja lugar a la pantalla de inicio, que recibe ese fondo.
+4. El objeto queda como fondo de la pantalla de inicio, en el indice 0, y sigue
+   animando. **No** se borra ni se libera el archivo: los dos viven mientras el
+   fondo exista.
 
-La decodificacion del frame 0 ocurre con el lock tomado y frena el render mientras
-dura. El log informa cuanto tardaron la decodificacion y el proceso, y cuanto
-stack sobro.
+`s_dsc` es uno solo para todo el firmware. Al reemplazar el fondo hay que borrar
+el objeto viejo **antes** de crear el nuevo, o por un rato hay dos `lv_gif`
+apuntando al mismo descriptor.
+
+El blur, el escalado a 3/5 y el atenuado al 60 % de `make_background()` siguen
+existiendo, pero solo para el **PNG**: un GIF se muestra tal cual, a tamano
+completo.
 
 Evitar:
 
@@ -277,21 +285,36 @@ Evitar:
 
 ### Fase 1b: animacion
 
-Planeada. Cuando se implemente:
+El GIF de inicio se reproduce: `lv_gif` queda en la pantalla de inicio, loop
+infinito (`lv_gif_set_loop_count(gif, 0)`), sin pausar el timer. Un PNG
+subido desde Fondo sigue siendo fondo estatico. Un GIF se recorta a 240x284
+en el celular (se conservan los frames) y pisa `splash.gif`.
 
-- La animacion arranca con `lv_gif_resume()` cuando el arranque termino. **No con
-  `lv_gif_restart()`:** fuerza `loop_count = -1`, y la animacion se detiene al
-  completar una vuelta.
-- Antes de dejarla activa por defecto se mide en hardware: tiempo por frame de
-  `GIF_playFrame` (corre en la task de LVGL, asi que un frame lento demora el
-  tactil), PSRAM libre antes y despues
-  (`heap_caps_get_free_size(MALLOC_CAP_SPIRAM)`) y cuadros por segundo reales.
-- **Al cambiar de pantalla, el objeto se borra** con `lv_obj_delete()`. Su
-  destructor cierra el decodificador, libera el framebuffer y borra el timer. El
-  buffer del archivo es nuestro: lo libera un handler de `LV_EVENT_DELETE`.
-- `lv_gif_set_auto_pause_invisible(gif, true)` sirve solo de red de seguridad:
-  pausa si la pantalla del GIF no es la activa, pero **no reanuda sola** y no
-  libera memoria.
+- **No** usar `lv_gif_restart()`: fuerza `loop_count = -1`, y la animacion se
+  detiene al completar una vuelta.
+- **`lv_gif_set_auto_pause_invisible()` va en `false`.** Pausa cuando el objeto
+  no es visible y **no reanuda nunca**. Peor: `lv_gif_set_src()` ya dejo el timer
+  corriendo, y en el primer tick el objeto todavia no paso por un layout, asi
+  que `lv_obj_is_visible()` da falso y se pausa solo. Con el auto-pause activado
+  la animacion queda congelada en el frame 1 para siempre; costo dos flasheos
+  descubrirlo.
+- **Quien pausa es el shell**, con `home_screen_pause_bg()`, porque es el unico
+  que sabe si la home esta tapada. Un GIF a pantalla completa cuesta lo mismo
+  tapado que a la vista. El estado se guarda: si Fondo esta abierta y le subis
+  un fondo nuevo, el objeto nace en pausa.
+- El objeto solo se borra al reemplazar el fondo, y ahi tambien se libera el
+  archivo en PSRAM. El destructor de `lv_gif` cierra el decodificador, libera el
+  framebuffer y borra el timer; el buffer del archivo es nuestro.
+
+Medido en la placa (sonda sobre `lv_gif_get_current_frame_index()`, ventanas de
+10 s): **109 ms por frame** contra los 70 ms que pide el archivo. La
+decodificacion entra en presupuesto —oculto y decodificando da 75 ms, el techo
+del propio archivo— y los ~35 ms que sobran son el dibujado. Lo que **no**
+sirvio, medido: DMA con doble buffer, `max_transfer_sz` real y `sw_rotate=false`
+(el SPI ya se solapaba, asi que subir el reloj tampoco daria nada hoy), y dos
+unidades de dibujo (el cuello es ancho de banda de PSRAM, no ciclos). Bajar de
+109 pide no decodificar por frame: predecodificar los 20 frames a RGB565 en
+PSRAM (~2,7 MB) y cambiar el `src` de un `lv_image`.
 
 ### Guardado seguro
 

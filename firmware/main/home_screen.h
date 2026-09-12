@@ -12,3 +12,16 @@
  * Llamar con bsp_display_lock() tomado.
  */
 void home_screen_show(lv_draw_buf_t *bg);
+
+/* Reemplaza el fondo. El buf anterior se destruye. Lock de LVGL tomado. */
+void home_screen_set_bg(lv_draw_buf_t *bg);
+
+/* GIF animado como fondo. Lock de LVGL tomado. */
+void home_screen_set_gif(lv_obj_t *gif);
+
+/*
+ * Frena o reanuda el fondo animado. Lo llama el shell cuando algo tapa la
+ * pantalla de inicio: el GIF cuesta lo mismo tapado que a la vista. Sin fondo
+ * animado no hace nada. Lock de LVGL tomado.
+ */
+void home_screen_pause_bg(bool paused);

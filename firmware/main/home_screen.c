@@ -23,6 +23,15 @@ static lv_obj_t *s_clock = NULL;
 static lv_obj_t *s_wifi = NULL;
 static lv_obj_t *s_battery = NULL;
 static lv_obj_t *s_usb = NULL;
+static lv_obj_t *s_bg = NULL;
+static lv_draw_buf_t *s_bg_buf = NULL;
+static lv_obj_t *s_gif = NULL;
+
+/* El estado vale aunque todavia no haya GIF: si Fondo esta abierta y le subis
+   uno, el objeto nace mientras la home sigue tapada y tiene que nacer en pausa.
+   Sin esto, el fondo nuevo anima debajo del overlay, que es justo lo que
+   home_screen_pause_bg() existe para no pagar. */
+static bool s_bg_paused = false;
 static time_t s_shown = -1;
 static bool s_wifi_shown = true;
 static bool s_usb_shown = true;
@@ -87,15 +96,82 @@ static void battery_update(lv_timer_t *timer)
     set_visible(s_usb, p != NULL && p->vbus, &s_usb_shown);
 }
 
+void home_screen_set_gif(lv_obj_t *gif)
+{
+    if (s_gif != NULL && s_gif != gif) {
+        lv_obj_delete(s_gif);
+        s_gif = NULL;
+    }
+    if (s_bg != NULL) {
+        lv_obj_delete(s_bg);
+        s_bg = NULL;
+    }
+    if (s_bg_buf != NULL) {
+        lv_draw_buf_destroy(s_bg_buf);
+        s_bg_buf = NULL;
+    }
+    s_gif = gif;
+    if (gif == NULL) {
+        return;
+    }
+    lv_obj_center(gif);
+    lv_obj_move_to_index(gif, 0);
+
+    /* gif_from_mem() lo deja andando: si la home esta tapada, se frena ya. */
+    if (s_bg_paused) {
+        lv_gif_pause(gif);
+    }
+}
+
+/*
+ * Un GIF a pantalla completa cuesta lo mismo este tapado o no: decodifica el
+ * frame, lo mezcla y lo manda por SPI igual. LVGL trae un auto-pause por
+ * visibilidad, pero pausa sin reanudar nunca (ver gif_from_mem en splash_gif.c),
+ * asi que lo decide el shell, que es el unico que sabe si la home esta a la
+ * vista.
+ */
+void home_screen_pause_bg(bool paused)
+{
+    s_bg_paused = paused;
+    if (s_gif == NULL) {
+        return;
+    }
+    if (paused) {
+        lv_gif_pause(s_gif);
+    } else {
+        lv_gif_resume(s_gif);
+    }
+}
+
+void home_screen_set_bg(lv_draw_buf_t *bg)
+{
+    if (s_gif != NULL) {
+        lv_obj_delete(s_gif);
+        s_gif = NULL;
+    }
+    if (s_bg != NULL) {
+        lv_obj_delete(s_bg);
+        s_bg = NULL;
+    }
+    if (s_bg_buf != NULL) {
+        lv_draw_buf_destroy(s_bg_buf);
+        s_bg_buf = NULL;
+    }
+    s_bg_buf = bg;
+    if (bg == NULL) {
+        return;
+    }
+    s_bg = lv_image_create(lv_screen_active());
+    lv_image_set_src(s_bg, bg);
+    lv_obj_center(s_bg);
+    lv_obj_move_to_index(s_bg, 0);
+}
+
 void home_screen_show(lv_draw_buf_t *bg)
 {
     lv_obj_t *scr = lv_screen_active();
 
-    if (bg != NULL) {
-        lv_obj_t *img = lv_image_create(scr);
-        lv_image_set_src(img, bg);
-        lv_obj_center(img);
-    }
+    home_screen_set_bg(bg);
 
     /* La hora manda: ocupa su propia linea en la escala grande, y debajo va una
        fila de etiquetas chicas con el resto del estado. Las que no aplican se

@@ -51,14 +51,21 @@ CONFIG_BSP_SPIFFS_PARTITION_LABEL="assets"
 
 # --- LVGL ---
 # Malloc de C en vez del pool propio de LVGL (64 KB fijos): el objeto lv_gif
-# (~24 KB) y su framebuffer ARGB8888 (hasta 272 KB) no entran en el pool. Con
+# (~24 KB) y su framebuffer RGB565 (136 KB a 240x284) no entran en el pool. Con
 # CONFIG_SPIRAM_USE_MALLOC, los pedidos grandes se sirven desde PSRAM.
 # CONFIG_LV_USE_BUILTIN_MALLOC is not set
 CONFIG_LV_USE_CLIB_MALLOC=y
 # Widget lv_gif, para la imagen de inicio (docs/arquitectura.md).
 CONFIG_LV_USE_GIF=y
+# PNG subido desde Fondo (canvas del celular).
+CONFIG_LV_USE_LODEPNG=y
 # QR para el SoftAP de provision (WIFI:T:nopass;S:ws183-xxxx;;).
 CONFIG_LV_USE_QRCODE=y
+# Un solo draw unit, a proposito. Probado con dos (CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=2
+# mas CONFIG_LV_OS_FREERTOS, que LVGL exige para repartir el trabajo): 105/110/110
+# ms por frame contra 105/110/110 con uno. Cero diferencia. El cuello del fondo
+# animado no son ciclos de CPU sino el ancho de banda de PSRAM, y dos cores
+# leyendo la misma PSRAM no leen mas rapido.
 CONFIG_LV_USE_LOG=y
 CONFIG_LV_COLOR_DEPTH_16=y
 # Sin esto no linkea lv_font_montserrat_20 (por defecto solo viene la 14).

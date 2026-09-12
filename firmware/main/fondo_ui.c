@@ -21,6 +21,7 @@ static lv_obj_t *s_qr;
 static lv_obj_t *s_hint;
 static lv_obj_t *s_ask;
 static lv_obj_t *s_ask_id;
+static lv_obj_t *s_wait;
 static lv_timer_t *s_timer;
 static bool s_asking;
 static uint32_t s_ask_ticks;
@@ -43,9 +44,31 @@ static void style_button(lv_obj_t *btn, bool primary)
     lv_obj_set_style_text_font(btn, UI_FONT_BODY, 0);
 }
 
+static void hide_wait(void)
+{
+    if (s_wait != NULL) {
+        lv_obj_add_flag(s_wait, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void show_wait(void)
+{
+    if (s_ask != NULL) {
+        lv_obj_add_flag(s_ask, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_qr_box != NULL) {
+        lv_obj_add_flag(s_qr_box, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_wait != NULL) {
+        lv_obj_remove_flag(s_wait, LV_OBJ_FLAG_HIDDEN);
+    }
+    lv_label_set_text(s_status, "esperando imagen");
+}
+
 static void show_qr(void)
 {
     s_asking = false;
+    hide_wait();
     if (s_ask != NULL) {
         lv_obj_add_flag(s_ask, LV_OBJ_FLAG_HIDDEN);
     }
@@ -65,6 +88,7 @@ static void show_ask(void)
 {
     s_asking = true;
     s_ask_ticks = 0;
+    hide_wait();
     if (s_qr_box != NULL) {
         lv_obj_add_flag(s_qr_box, LV_OBJ_FLAG_HIDDEN);
     }
@@ -111,13 +135,7 @@ static void allow_cb(void *arg)
     LV_UNUSED(arg);
     hide_ask();
     fondo_http_allow();
-    lv_label_set_text(s_status, "aceptado");
-    if (s_hint != NULL) {
-        lv_label_set_text(s_hint, "elige el archivo");
-    }
-    if (s_qr_box != NULL) {
-        lv_obj_remove_flag(s_qr_box, LV_OBJ_FLAG_HIDDEN);
-    }
+    show_wait();
 }
 
 static void deny_cb(void *arg)
@@ -145,9 +163,10 @@ static void tick(lv_timer_t *timer)
     if (s_saved) {
         s_saved = false;
         hide_ask();
+        hide_wait();
         lv_label_set_text(s_status, "fondo guardado");
         if (s_hint != NULL) {
-            lv_label_set_text(s_hint, "se ve al reiniciar");
+            lv_label_set_text(s_hint, "cerra para verlo");
         }
         if (s_qr_box != NULL) {
             lv_obj_add_flag(s_qr_box, LV_OBJ_FLAG_HIDDEN);
@@ -290,13 +309,35 @@ static void build_online(lv_obj_t *root)
     lv_label_set_text(no_l, "No");
     lv_obj_center(no_l);
 
+    s_wait = lv_obj_create(root);
+    lv_obj_remove_style_all(s_wait);
+    lv_obj_set_size(s_wait, LV_PCT(100), 180);
+    lv_obj_align(s_wait, LV_ALIGN_CENTER, 0, 4);
+    lv_obj_remove_flag(s_wait, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_wait, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t *spin = lv_spinner_create(s_wait);
+    lv_obj_set_size(spin, 72, 72);
+    lv_spinner_set_anim_params(spin, 900, 80);
+    lv_obj_set_style_arc_color(spin, UI_COL_HAIRLINE, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(spin, UI_COL_TEXT, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(spin, 6, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(spin, 6, LV_PART_INDICATOR);
+    lv_obj_align(spin, LV_ALIGN_TOP_MID, 0, 16);
+
+    lv_obj_t *wait_l = lv_label_create(s_wait);
+    lv_label_set_text(wait_l, "elige la imagen");
+    lv_obj_set_style_text_color(wait_l, UI_COL_TEXT_2, 0);
+    lv_obj_set_style_text_font(wait_l, UI_FONT_BODY, 0);
+    lv_obj_align(wait_l, LV_ALIGN_BOTTOM_MID, 0, -8);
+
     lv_obj_t *close = lv_button_create(root);
-    lv_obj_set_size(close, 92, 36);
+    lv_obj_set_size(close, 110, 36);
     lv_obj_align(close, LV_ALIGN_BOTTOM_MID, 0, -12);
     lv_obj_add_event_cb(close, close_clicked, LV_EVENT_CLICKED, NULL);
     style_button(close, false);
     lv_obj_t *close_label = lv_label_create(close);
-    lv_label_set_text(close_label, "Cerrar");
+    lv_label_set_text(close_label, "Cancelar");
     lv_obj_center(close_label);
 
     s_timer = lv_timer_create(tick, 100, NULL);
@@ -337,6 +378,7 @@ static void fondo_open(lv_obj_t *root)
     s_hint = NULL;
     s_ask = NULL;
     s_ask_id = NULL;
+    s_wait = NULL;
     s_timer = NULL;
 
     char ip[16];
@@ -370,6 +412,7 @@ static void fondo_close(void)
     s_hint = NULL;
     s_ask = NULL;
     s_ask_id = NULL;
+    s_wait = NULL;
     s_asking = false;
 }
 
