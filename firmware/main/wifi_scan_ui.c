@@ -64,12 +64,7 @@ static void apply_pick(void)
     if (s_pick_open) {
         s_qr_mode = false;
         show_list_widgets(true);
-        lv_label_set_text(s_status, "conectando...");
-        esp_err_t err = svc_wifi_connect(s_pick_ssid, "");
-        if (err != ESP_OK) {
-            lv_label_set_text(s_status, "WiFi no listo");
-            ESP_LOGW(TAG, "connect: %s", esp_err_to_name(err));
-        }
+        lv_label_set_text(s_status, "solo redes privadas");
         return;
     }
 

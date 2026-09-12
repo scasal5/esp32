@@ -33,8 +33,9 @@ size_t svc_wifi_copy_results(svc_wifi_ap_t *out, size_t max);
 bool svc_wifi_connected(void);
 const char *svc_wifi_sta_ssid(void);
 
-/* pass vacio: red abierta. No loguea la clave. */
+/* Solo redes con clave (WPA). pass no puede ser vacio. No loguea la clave. */
 esp_err_t svc_wifi_connect(const char *ssid, const char *pass);
+void svc_wifi_disconnect(void);
 
 /*
  * SoftAP abierto ws183-XXXX + portal en 192.168.4.1 para la red `ssid`.

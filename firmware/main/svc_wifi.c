@@ -75,12 +75,29 @@ static esp_err_t scan_start_now(void)
 
 static void creds_save(const char *ssid, const char *pass)
 {
+    if (ssid == NULL || ssid[0] == '\0' || pass == NULL || pass[0] == '\0') {
+        return;
+    }
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) {
         return;
     }
     nvs_set_str(h, NVS_KEY_SSID, ssid);
-    nvs_set_str(h, NVS_KEY_PASS, pass != NULL ? pass : "");
+    nvs_set_str(h, NVS_KEY_PASS, pass);
+    nvs_commit(h);
+    nvs_close(h);
+}
+
+static void creds_clear(void)
+{
+    s_saved_ssid[0] = '\0';
+    s_saved_pass[0] = '\0';
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) {
+        return;
+    }
+    nvs_erase_key(h, NVS_KEY_SSID);
+    nvs_erase_key(h, NVS_KEY_PASS);
     nvs_commit(h);
     nvs_close(h);
 }
@@ -100,6 +117,11 @@ static void creds_load(void)
         s_saved_pass[0] = '\0';
     }
     nvs_close(h);
+    /* No reconectar a una red abierta guardada por error. */
+    if (s_saved_ssid[0] != '\0' && s_saved_pass[0] == '\0') {
+        ESP_LOGW(TAG, "nvs: red abierta, se ignora");
+        creds_clear();
+    }
 }
 
 static void make_ap_name(void)
@@ -270,6 +292,12 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
     (void)event_base;
 
     if (event_id == IP_EVENT_STA_GOT_IP) {
+        if (s_saved_pass[0] == '\0') {
+            ESP_LOGW(TAG, "IP de red abierta, se corta");
+            creds_clear();
+            (void)esp_wifi_disconnect();
+            return;
+        }
         const ip_event_got_ip_t *got = event_data;
         if (take_lock()) {
             s_connected = true;
@@ -447,20 +475,35 @@ const char *svc_wifi_sta_ssid(void)
     return s_sta_ssid;
 }
 
+void svc_wifi_disconnect(void)
+{
+    if (take_lock()) {
+        s_connecting = false;
+        s_connected = false;
+        s_sta_ssid[0] = '\0';
+        xSemaphoreGive(s_lock);
+    }
+    creds_clear();
+    if (s_inited) {
+        (void)esp_wifi_disconnect();
+    }
+    ESP_LOGI(TAG, "STA down");
+}
+
 esp_err_t svc_wifi_connect(const char *ssid, const char *pass)
 {
     if (!s_inited || ssid == NULL || ssid[0] == '\0') {
         return ESP_ERR_INVALID_STATE;
     }
+    if (pass == NULL || pass[0] == '\0') {
+        ESP_LOGW(TAG, "red publica, no se conecta");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
 
     wifi_config_t cfg = { 0 };
     strncpy((char *)cfg.sta.ssid, ssid, sizeof(cfg.sta.ssid) - 1);
-    if (pass != NULL && pass[0] != '\0') {
-        strncpy((char *)cfg.sta.password, pass, sizeof(cfg.sta.password) - 1);
-        cfg.sta.threshold.authmode = WIFI_AUTH_WPA_PSK;
-    } else {
-        cfg.sta.threshold.authmode = WIFI_AUTH_OPEN;
-    }
+    strncpy((char *)cfg.sta.password, pass, sizeof(cfg.sta.password) - 1);
+    cfg.sta.threshold.authmode = WIFI_AUTH_WPA_PSK;
     cfg.sta.pmf_cfg.capable = true;
     cfg.sta.pmf_cfg.required = false;
 
@@ -616,14 +659,22 @@ static int cmd_wifiprov(int argc, char **argv)
 
 static int cmd_wificonnect(int argc, char **argv)
 {
-    if (argc < 2) {
-        printf("uso: wificonnect <ssid> [pass]\n");
+    if (argc < 3) {
+        printf("uso: wificonnect <ssid> <pass>\n");
         return 1;
     }
-    const char *pass = argc >= 3 ? argv[2] : "";
-    esp_err_t err = svc_wifi_connect(argv[1], pass);
+    esp_err_t err = svc_wifi_connect(argv[1], argv[2]);
     printf("wificonnect: %s\n", esp_err_to_name(err));
     return err == ESP_OK ? 0 : 1;
+}
+
+static int cmd_wifidisconnect(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    svc_wifi_disconnect();
+    printf("wifidisconnect ok\n");
+    return 0;
 }
 
 static int cmd_wifistop(int argc, char **argv)
@@ -644,8 +695,10 @@ void svc_wifi_register_console(void)
           .func = &cmd_wifiscan },
         { .command = "wifiprov", .help = "Abre SoftAP+portal para un SSID",
           .hint = "<ssid>", .func = &cmd_wifiprov },
-        { .command = "wificonnect", .help = "Conecta STA (pass opcional)",
-          .hint = "<ssid> [pass]", .func = &cmd_wificonnect },
+        { .command = "wificonnect", .help = "Conecta STA a una red con clave",
+          .hint = "<ssid> <pass>", .func = &cmd_wificonnect },
+        { .command = "wifidisconnect", .help = "Corta el STA y borra NVS wifi",
+          .func = &cmd_wifidisconnect },
         { .command = "wifistop", .help = "Cierra el SoftAP",
           .func = &cmd_wifistop },
     };
