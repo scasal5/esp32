@@ -34,6 +34,15 @@ size_t svc_wifi_copy_results(svc_wifi_ap_t *out, size_t max);
 bool svc_wifi_connected(void);
 const char *svc_wifi_sta_ssid(void);
 
+typedef enum {
+    SVC_WIFI_LINK_IDLE = 0,
+    SVC_WIFI_LINK_CONNECTING,
+    SVC_WIFI_LINK_UP,
+    SVC_WIFI_LINK_FAIL,
+} svc_wifi_link_t;
+
+svc_wifi_link_t svc_wifi_link(void);
+
 /* Solo redes con clave (WPA). pass no puede ser vacio. No loguea la clave. */
 esp_err_t svc_wifi_connect(const char *ssid, const char *pass);
 void svc_wifi_disconnect(void);

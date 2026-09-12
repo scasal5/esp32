@@ -1,10 +1,7 @@
 # Arquitectura
 
-> **Diseno propuesto.** Hoy solo existen el servicio de bateria
-> (`main/pm_axp2101.cpp`) y el splash (`main/boot_splash.c`). Este documento
-> fija las reglas antes de escribir el resto, para que las contribuciones
-> encajen sin reescrituras. Si algo no cierra, se discute en un issue antes de
-> programarlo.
+> **Diseno propuesto.** Este documento fija las reglas de capas, hilos y
+> contratos. Si algo no cierra, se discute en un issue antes de programarlo.
 
 ## Capas
 
@@ -97,9 +94,22 @@ frena el render. En la fase 2, `svc_pm` sondea desde su propia task y publica
 `SVC_PM_EVENT_STATUS`; la barra de estado lo escucha y actualiza la etiqueta
 entre lock y unlock (regla 3).
 
-Para WiFi, ESP-IDF ya publica `WIFI_EVENT` e `IP_EVENT`. `svc_wifi` solo agrega
-la lista de redes del ultimo escaneo y las redes guardadas. Las credenciales
-viven en NVS y nunca en el repo.
+Para WiFi, ESP-IDF ya publica `WIFI_EVENT` e `IP_EVENT`. `svc_wifi` agrega la
+lista del ultimo escaneo, el SoftAP de provision y las redes guardadas. Las
+credenciales viven en NVS (`wifi`) y nunca en el repo.
+
+### Portal de clave (celular)
+
+El QR `WIFI:` solo une el celular al SoftAP. Cuando entra un cliente, el QR
+pasa a `http://192.168.4.1/` para abrir el formulario.
+
+Ese formulario **no redirige**. El submit es `fetch POST /connect` (JSON) y la
+misma pagina queda en carga: un JS pregunta `GET /status` hasta `up` o `fail`.
+`/status` lee `svc_wifi_link()`. El SoftAP no se apaga al primer `GOT_IP`: si
+se corta ahi, el celular pierde la pagina antes de ver el resultado. Lo baja
+la UI de la placa al cerrar, unos segundos despues de conectar.
+
+No hay teclado en la placa. Redes abiertas no se conectan.
 
 ## Imagen de inicio
 

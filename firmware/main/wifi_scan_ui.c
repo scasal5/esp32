@@ -148,7 +148,7 @@ static void wifi_scan_tick(lv_timer_t *timer)
     if (s_connected) {
         s_connected = false;
         lv_label_set_text(s_status, "conectado");
-        lv_timer_t *t = lv_timer_create(close_later, 1200, NULL);
+        lv_timer_t *t = lv_timer_create(close_later, 10000, NULL);
         lv_timer_set_repeat_count(t, 1);
         return;
     }

@@ -151,27 +151,60 @@ static esp_err_t send_form(httpd_req_t *req)
     build_ssid_options(opts, sizeof(opts));
     html_escape(s_target, esc, sizeof(esc));
 
-    static char page[2200];
+    static char page[3600];
     snprintf(page, sizeof(page),
              "<!DOCTYPE html><html><head>"
              "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
              "<meta charset=\"utf-8\"><title>ws183-os</title>"
              "<style>"
-             "body{font-family:sans-serif;background:#101418;color:#F2F4F8;"
-             "margin:24px}"
+             "body{font-family:sans-serif;background:#101418;color:#F2F4F8;margin:24px}"
              "select,input,button{width:100%%;box-sizing:border-box;padding:14px;"
              "margin:10px 0;font-size:18px;border-radius:10px;border:0}"
              "button{background:#3B82F6;color:#fff}"
              ".net{font-size:22px;font-weight:700;margin:12px 0}"
+             ".spin{width:36px;height:36px;border:4px solid #3B82F6;"
+             "border-top-color:transparent;border-radius:50%%;"
+             "animation:s 0.8s linear infinite;margin:24px auto}"
+             "@keyframes s{to{transform:rotate(360deg)}}"
+             ".hide{display:none}"
              "</style></head><body>"
              "<h2>Conectar la placa</h2>"
              "<p class=\"net\">Red: %s</p>"
+             "<div id=\"box\">"
              "<p>Escribi la clave de esa red. Esto no cambia el WiFi del celular.</p>"
-             "<form method=\"POST\" action=\"/connect\">"
+             "<form id=\"f\">"
              "<select name=\"ssid\">%s</select>"
              "<input type=\"password\" name=\"pass\" placeholder=\"contrasena\" "
              "autofocus required>"
              "<button type=\"submit\">Conectar la placa</button></form>"
+             "</div>"
+             "<div id=\"wait\" class=\"hide\">"
+             "<p>Conectando a la red...</p><div class=\"spin\"></div>"
+             "</div>"
+             "<div id=\"ok\" class=\"hide\"><p>Listo. La placa ya esta en esa red.</p></div>"
+             "<div id=\"fail\" class=\"hide\">"
+             "<p>No se pudo conectar.</p>"
+             "<button type=\"button\" id=\"retry\">Reintentar</button>"
+             "</div>"
+             "<script>"
+             "const $=id=>document.getElementById(id);"
+             "function show(id){['box','wait','ok','fail'].forEach(x=>$(x).classList.add('hide'));"
+             "$(id).classList.remove('hide');}"
+             "$('retry').onclick=()=>show('box');"
+             "$('f').onsubmit=async e=>{"
+             "e.preventDefault();"
+             "show('wait');"
+             "const b=new URLSearchParams(new FormData($('f')));"
+             "await fetch('/connect',{method:'POST',body:b});"
+             "(function poll(){"
+             "fetch('/status').then(r=>r.json()).then(j=>{"
+             "if(j.state==='up'){show('ok');return;}"
+             "if(j.state==='fail'){show('fail');return;}"
+             "setTimeout(poll,400);}"
+             ").catch(()=>setTimeout(poll,800));"
+             "})();"
+             "};"
+             "</script>"
              "</body></html>",
              esc, opts);
 
@@ -223,12 +256,34 @@ static esp_err_t connect_post(httpd_req_t *req)
         s_on_pass(ssid, pass);
     }
 
-    httpd_resp_set_type(req, "text/html");
-    return httpd_resp_send(req,
-                           "<!DOCTYPE html><html><body>"
-                           "<p>Conectando. Podes volver a la placa.</p>"
-                           "</body></html>",
-                           HTTPD_RESP_USE_STRLEN);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_sendstr(req, "{\"ok\":true}");
+}
+
+static esp_err_t status_get(httpd_req_t *req)
+{
+    const char *state = "idle";
+    switch (svc_wifi_link()) {
+    case SVC_WIFI_LINK_CONNECTING:
+        state = "connecting";
+        break;
+    case SVC_WIFI_LINK_UP:
+        state = "up";
+        break;
+    case SVC_WIFI_LINK_FAIL:
+        state = "fail";
+        break;
+    default:
+        break;
+    }
+
+    char json[96];
+    snprintf(json, sizeof(json), "{\"state\":\"%s\",\"ssid\":\"%s\"}",
+             state, svc_wifi_sta_ssid());
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_sendstr(req, json);
 }
 
 static esp_err_t http_404(httpd_req_t *req, httpd_err_code_t err)
@@ -390,6 +445,9 @@ esp_err_t wifi_portal_start(const char *target_ssid, wifi_portal_on_pass_t cb)
     static const httpd_uri_t uri_connect = {
         .uri = "/connect", .method = HTTP_POST, .handler = connect_post
     };
+    static const httpd_uri_t uri_status = {
+        .uri = "/status", .method = HTTP_GET, .handler = status_get
+    };
     static const httpd_uri_t uri_g204 = {
         .uri = "/generate_204", .method = HTTP_GET, .handler = send_form
     };
@@ -414,6 +472,7 @@ esp_err_t wifi_portal_start(const char *target_ssid, wifi_portal_on_pass_t cb)
     };
     httpd_register_uri_handler(s_httpd, &uri_root);
     httpd_register_uri_handler(s_httpd, &uri_connect);
+    httpd_register_uri_handler(s_httpd, &uri_status);
     httpd_register_uri_handler(s_httpd, &uri_g204);
     httpd_register_uri_handler(s_httpd, &uri_g204b);
     httpd_register_uri_handler(s_httpd, &uri_hotspot);

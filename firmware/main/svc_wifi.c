@@ -30,6 +30,7 @@ static bool s_inited;
 static bool s_sta_up;
 static bool s_connected;
 static bool s_connecting;
+static bool s_link_fail;
 static bool s_scan_in_progress;
 static bool s_scan_pending;
 static bool s_prov_on;
@@ -184,6 +185,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
             s_sta_ssid[0] = '\0';
             if (s_connecting && reason != WIFI_REASON_ASSOC_LEAVE) {
                 s_connecting = false;
+                s_link_fail = true;
                 fail = true;
             }
             xSemaphoreGive(s_lock);
@@ -303,6 +305,7 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
         if (take_lock()) {
             s_connected = true;
             s_connecting = false;
+            s_link_fail = false;
             xSemaphoreGive(s_lock);
         }
         if (got != NULL) {
@@ -311,7 +314,8 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
             ESP_LOGI(TAG, "IP up");
         }
         creds_save(s_sta_ssid, s_saved_pass);
-        svc_wifi_prov_stop();
+        /* El SoftAP sigue un rato: el celular tiene que poder preguntar
+           /status y ver el resultado. Lo corta la UI al cerrar. */
         esp_event_post(SVC_WIFI_EVENT, SVC_WIFI_EVENT_CONNECTED, NULL, 0, 0);
     } else if (event_id == IP_EVENT_STA_LOST_IP) {
         if (take_lock()) {
@@ -471,6 +475,20 @@ bool svc_wifi_connected(void)
     return s_connected;
 }
 
+svc_wifi_link_t svc_wifi_link(void)
+{
+    if (s_connected) {
+        return SVC_WIFI_LINK_UP;
+    }
+    if (s_connecting) {
+        return SVC_WIFI_LINK_CONNECTING;
+    }
+    if (s_link_fail) {
+        return SVC_WIFI_LINK_FAIL;
+    }
+    return SVC_WIFI_LINK_IDLE;
+}
+
 const char *svc_wifi_sta_ssid(void)
 {
     return s_sta_ssid;
@@ -481,6 +499,7 @@ void svc_wifi_disconnect(void)
     if (take_lock()) {
         s_connecting = false;
         s_connected = false;
+        s_link_fail = false;
         s_sta_ssid[0] = '\0';
         xSemaphoreGive(s_lock);
     }
@@ -510,6 +529,7 @@ esp_err_t svc_wifi_connect(const char *ssid, const char *pass)
 
     if (take_lock()) {
         s_connecting = true;
+        s_link_fail = false;
         strncpy(s_sta_ssid, ssid, sizeof(s_sta_ssid) - 1);
         s_sta_ssid[sizeof(s_sta_ssid) - 1] = '\0';
         strncpy(s_saved_ssid, ssid, sizeof(s_saved_ssid) - 1);
