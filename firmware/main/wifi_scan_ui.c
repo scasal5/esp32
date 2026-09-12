@@ -27,6 +27,10 @@ static lv_timer_t *s_timer;
 static bool s_qr_mode;
 static bool s_asking;
 static uint32_t s_ask_ticks;
+/* La pantalla existe. Los eventos de svc_wifi llegan en la task del loop de
+   eventos y pueden cruzarse con un cierre: sin esto quedarian marcando flags
+   para una UI que ya no esta. */
+static volatile bool s_live;
 static volatile bool s_scan_done;
 static volatile bool s_connected;
 static volatile bool s_connect_fail;
@@ -398,6 +402,10 @@ static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id,
     (void)base;
     (void)data;
 
+    if (!s_live) {
+        return;
+    }
+
     if (id == SVC_WIFI_EVENT_SCAN_DONE) {
         s_scan_done = true;
     } else if (id == SVC_WIFI_EVENT_CONNECTED) {
@@ -430,6 +438,9 @@ static void wifi_open(lv_obj_t *root)
 
     build(root);
 
+    /* Recien con la UI construida se aceptan eventos. */
+    s_live = true;
+
     esp_err_t err = svc_wifi_scan();
     if (err != ESP_OK) {
         lv_label_set_text(s_status, "WiFi no listo");
@@ -443,6 +454,11 @@ static void wifi_open(lv_obj_t *root)
  */
 static void wifi_close(void)
 {
+    /* Primero: cortar la entrada de eventos antes de soltar nada. */
+    s_live = false;
+
+    /* Un scan tarda segundos y esta pantalla es su unico consumidor. */
+    svc_wifi_scan_cancel();
     svc_wifi_prov_stop();
     if (s_timer != NULL) {
         lv_timer_delete(s_timer);
