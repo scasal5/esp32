@@ -19,6 +19,7 @@ typedef enum {
     SVC_WIFI_EVENT_SCAN_DONE,
     SVC_WIFI_EVENT_CONNECTED,
     SVC_WIFI_EVENT_CONNECT_FAIL,
+    SVC_WIFI_EVENT_PROV_CLIENT,
 } svc_wifi_event_id_t;
 
 typedef struct {

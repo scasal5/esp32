@@ -23,6 +23,7 @@ static bool s_qr_mode;
 static volatile bool s_scan_done;
 static volatile bool s_connected;
 static volatile bool s_connect_fail;
+static volatile bool s_prov_client;
 static svc_wifi_ap_t s_shown[SVC_WIFI_MAX_RESULTS];
 static char s_pick_ssid[33];
 static bool s_pick_open;
@@ -55,7 +56,7 @@ static void show_qr_for_pick(void)
         lv_qrcode_set_data(s_qr, svc_wifi_prov_qr());
     }
     if (s_hint != NULL) {
-        lv_label_set_text_fmt(s_hint, "escanea  %s", svc_wifi_prov_ap_ssid());
+        lv_label_set_text(s_hint, "luego 192.168.4.1");
     }
 }
 
@@ -139,6 +140,14 @@ static void wifi_scan_tick(lv_timer_t *timer)
     if (s_connect_fail) {
         s_connect_fail = false;
         lv_label_set_text(s_status, "no se pudo conectar");
+        return;
+    }
+    if (s_prov_client) {
+        s_prov_client = false;
+        lv_label_set_text(s_status, "celular unido");
+        if (s_hint != NULL) {
+            lv_label_set_text(s_hint, "clave en 192.168.4.1");
+        }
         return;
     }
     if (!s_scan_done) {
@@ -231,6 +240,8 @@ static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id,
         s_connected = true;
     } else if (id == SVC_WIFI_EVENT_CONNECT_FAIL) {
         s_connect_fail = true;
+    } else if (id == SVC_WIFI_EVENT_PROV_CLIENT) {
+        s_prov_client = true;
     }
 }
 
@@ -250,6 +261,7 @@ void wifi_scan_ui_open(void)
     s_scan_done = false;
     s_connected = false;
     s_connect_fail = false;
+    s_prov_client = false;
     s_qr_mode = false;
     s_open = true;
     create_screen();

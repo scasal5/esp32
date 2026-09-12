@@ -207,6 +207,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
 
     if (event_id == WIFI_EVENT_AP_STACONNECTED) {
         ESP_LOGI(TAG, "portal client");
+        esp_event_post(SVC_WIFI_EVENT, SVC_WIFI_EVENT_PROV_CLIENT, NULL, 0, 0);
         return;
     }
 

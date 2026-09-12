@@ -1,4 +1,5 @@
 #include "wifi_portal.h"
+#include "svc_wifi.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -107,19 +108,47 @@ static void html_escape(const char *in, char *out, size_t n)
     out[j] = '\0';
 }
 
-static esp_err_t send_redirect(httpd_req_t *req)
+static void build_ssid_options(char *out, size_t n)
 {
-    httpd_resp_set_status(req, "302 Temporary Redirect");
-    httpd_resp_set_hdr(req, "Location", "/");
-    return httpd_resp_send(req, "Redirect", HTTPD_RESP_USE_STRLEN);
+    out[0] = '\0';
+    svc_wifi_ap_t list[SVC_WIFI_MAX_RESULTS];
+    size_t count = svc_wifi_copy_results(list, SVC_WIFI_MAX_RESULTS);
+    bool have_target = false;
+    size_t used = 0;
+
+    for (size_t i = 0; i < count; i++) {
+        if (list[i].open) {
+            continue;
+        }
+        char esc[80];
+        html_escape(list[i].ssid, esc, sizeof(esc));
+        const char *sel = "";
+        if (strcmp(list[i].ssid, s_target) == 0) {
+            sel = " selected";
+            have_target = true;
+        }
+        int w = snprintf(out + used, n - used,
+                         "<option value=\"%s\"%s>%s</option>", esc, sel, esc);
+        if (w < 0 || (size_t)w >= n - used) {
+            break;
+        }
+        used += (size_t)w;
+    }
+
+    if (!have_target && s_target[0] != '\0' && used + 80 < n) {
+        char esc[80];
+        html_escape(s_target, esc, sizeof(esc));
+        snprintf(out + used, n - used,
+                 "<option value=\"%s\" selected>%s</option>", esc, esc);
+    }
 }
 
-static esp_err_t root_get(httpd_req_t *req)
+static esp_err_t send_form(httpd_req_t *req)
 {
-    char esc[96];
-    html_escape(s_target, esc, sizeof(esc));
+    char opts[1200];
+    build_ssid_options(opts, sizeof(opts));
 
-    char page[768];
+    static char page[2048];
     snprintf(page, sizeof(page),
              "<!DOCTYPE html><html><head>"
              "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
@@ -127,25 +156,28 @@ static esp_err_t root_get(httpd_req_t *req)
              "<style>"
              "body{font-family:sans-serif;background:#101418;color:#F2F4F8;"
              "margin:24px}"
-             "input,button{width:100%%;box-sizing:border-box;padding:14px;"
+             "select,input,button{width:100%%;box-sizing:border-box;padding:14px;"
              "margin:10px 0;font-size:18px;border-radius:10px;border:0}"
              "button{background:#3B82F6;color:#fff}"
              "</style></head><body>"
-             "<h2>ws183-os</h2><p>Red: %s</p>"
+             "<h2>ws183-os</h2>"
+             "<p>Elegi la red de tu casa y escribi la clave.</p>"
              "<form method=\"POST\" action=\"/connect\">"
+             "<select name=\"ssid\">%s</select>"
              "<input type=\"password\" name=\"pass\" placeholder=\"contrasena\" "
              "autofocus>"
              "<button type=\"submit\">Conectar</button></form>"
              "</body></html>",
-             esc);
+             opts);
 
     httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     return httpd_resp_send(req, page, HTTPD_RESP_USE_STRLEN);
 }
 
 static esp_err_t connect_post(httpd_req_t *req)
 {
-    char body[192];
+    char body[256];
     int len = httpd_req_recv(req, body, sizeof(body) - 1);
     if (len <= 0) {
         httpd_resp_set_status(req, "400 Bad Request");
@@ -153,14 +185,25 @@ static esp_err_t connect_post(httpd_req_t *req)
     }
     body[len] = '\0';
 
-    char pass[65] = { 0 };
-    form_get(body, "pass", pass, sizeof(pass));
+    char body_ssid[256];
+    char body_pass[256];
+    memcpy(body_ssid, body, (size_t)len + 1);
+    memcpy(body_pass, body, (size_t)len + 1);
 
-    ESP_LOGI(TAG, "portal submit ssid=%s pass_len=%u", s_target,
+    char ssid[33] = { 0 };
+    char pass[65] = { 0 };
+    form_get(body_ssid, "ssid", ssid, sizeof(ssid));
+    form_get(body_pass, "pass", pass, sizeof(pass));
+    if (ssid[0] == '\0') {
+        strncpy(ssid, s_target, sizeof(ssid) - 1);
+    }
+
+    ESP_LOGI(TAG, "portal submit ssid=%s pass_len=%u", ssid,
              (unsigned)strlen(pass));
 
-    if (s_on_pass != NULL && s_target[0] != '\0') {
-        s_on_pass(s_target, pass);
+    if (s_on_pass != NULL && ssid[0] != '\0' && pass[0] != '\0') {
+        strncpy(s_target, ssid, sizeof(s_target) - 1);
+        s_on_pass(ssid, pass);
     }
 
     httpd_resp_set_type(req, "text/html");
@@ -171,15 +214,10 @@ static esp_err_t connect_post(httpd_req_t *req)
                            HTTPD_RESP_USE_STRLEN);
 }
 
-static esp_err_t captive_get(httpd_req_t *req)
-{
-    return send_redirect(req);
-}
-
 static esp_err_t http_404(httpd_req_t *req, httpd_err_code_t err)
 {
     (void)err;
-    return send_redirect(req);
+    return send_form(req);
 }
 
 static void dns_task(void *arg)
@@ -297,27 +335,40 @@ esp_err_t wifi_portal_start(const char *target_ssid, wifi_portal_on_pass_t cb)
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.lru_purge_enable = true;
     cfg.max_open_sockets = 7;
+    cfg.max_uri_handlers = 12;
     esp_err_t err = httpd_start(&s_httpd, &cfg);
     if (err != ESP_OK) {
         return err;
     }
 
-    const httpd_uri_t root = {
-        .uri = "/", .method = HTTP_GET, .handler = root_get
+    static const httpd_uri_t uri_root = {
+        .uri = "/", .method = HTTP_GET, .handler = send_form
     };
-    const httpd_uri_t connect = {
+    static const httpd_uri_t uri_connect = {
         .uri = "/connect", .method = HTTP_POST, .handler = connect_post
     };
-    const httpd_uri_t gen204 = {
-        .uri = "/generate_204", .method = HTTP_GET, .handler = captive_get
+    static const httpd_uri_t uri_g204 = {
+        .uri = "/generate_204", .method = HTTP_GET, .handler = send_form
     };
-    const httpd_uri_t hotspot = {
-        .uri = "/hotspot-detect.html", .method = HTTP_GET, .handler = captive_get
+    static const httpd_uri_t uri_g204b = {
+        .uri = "/gen_204", .method = HTTP_GET, .handler = send_form
     };
-    httpd_register_uri_handler(s_httpd, &root);
-    httpd_register_uri_handler(s_httpd, &connect);
-    httpd_register_uri_handler(s_httpd, &gen204);
-    httpd_register_uri_handler(s_httpd, &hotspot);
+    static const httpd_uri_t uri_hotspot = {
+        .uri = "/hotspot-detect.html", .method = HTTP_GET, .handler = send_form
+    };
+    static const httpd_uri_t uri_success = {
+        .uri = "/library/test/success.html", .method = HTTP_GET, .handler = send_form
+    };
+    static const httpd_uri_t uri_ncsi = {
+        .uri = "/connecttest.txt", .method = HTTP_GET, .handler = send_form
+    };
+    httpd_register_uri_handler(s_httpd, &uri_root);
+    httpd_register_uri_handler(s_httpd, &uri_connect);
+    httpd_register_uri_handler(s_httpd, &uri_g204);
+    httpd_register_uri_handler(s_httpd, &uri_g204b);
+    httpd_register_uri_handler(s_httpd, &uri_hotspot);
+    httpd_register_uri_handler(s_httpd, &uri_success);
+    httpd_register_uri_handler(s_httpd, &uri_ncsi);
     httpd_register_err_handler(s_httpd, HTTPD_404_NOT_FOUND, http_404);
 
     s_dns_run = true;
