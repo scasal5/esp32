@@ -445,6 +445,9 @@ static esp_err_t install_png(const uint8_t *data, size_t len)
         ESP_LOGW(TAG, "no se pudo escribir %s", SPLASH_PNG);
         return ESP_FAIL;
     }
+    /* Un solo archivo de fondo: el PNG reemplaza al GIF, igual que
+       install_gif() borra el PNG. */
+    unlink(SPLASH_PATH);
     if (!bsp_display_lock(0)) {
         lv_draw_buf_destroy(bg);
         return ESP_FAIL;
@@ -477,6 +480,22 @@ esp_err_t splash_gif_install(const uint8_t *data, size_t len)
     return ESP_ERR_INVALID_ARG;
 }
 
+esp_err_t splash_gif_clear(void)
+{
+    unlink(SPLASH_PATH);
+    unlink(SPLASH_PNG);
+
+    home_screen_set_gif(NULL);
+    uint8_t *old = s_buf;
+    s_buf = NULL;
+    memset(&s_dsc, 0, sizeof(s_dsc));
+    if (old != NULL) {
+        heap_caps_free(old);
+    }
+    ESP_LOGI(TAG, "fondo quitado");
+    return ESP_OK;
+}
+
 static void splash_gif_task(void *arg)
 {
     (void)arg;
@@ -490,8 +509,15 @@ static void splash_gif_task(void *arg)
         ESP_LOGW(TAG, "spiffs: %s (falta assets-flash?)", esp_err_to_name(err));
     } else {
         bg = background_from_png_file();
-        if (bg == NULL) {
+        if (bg != NULL) {
+            /* PNG gano: un GIF que hubiera quedado de un install viejo no
+               puede coexistir. */
+            unlink(SPLASH_PATH);
+        } else {
             gif_len = read_splash();
+            if (gif_len > 0) {
+                unlink(SPLASH_PNG);
+            }
         }
     }
 

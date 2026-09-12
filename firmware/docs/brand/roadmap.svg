@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 540" width="880" height="540" role="img" aria-label="Hoja de ruta. Fase 00, base: panel, splash y bateria, hecho. Fase 01a, imagen de inicio con el primer frame, hecho. Fase 01b, animacion del GIF, planeado. Fase 02, shell con gestos y registro de apps, parcial: barra de estado y carrusel hechos. Fase 03, app Fondo, planeado. Fase 04, WiFi con scan, QR y SoftAP, hecho. Fase 05, subir GIFs por la red local, planeado. Fase 06, hora por SNTP y OTA, parcial: el RTC ya funciona.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 540" width="880" height="540" role="img" aria-label="Hoja de ruta. Fase 00, base: panel, splash y bateria, hecho. Fase 01a, imagen de inicio con el primer frame, hecho. Fase 01b, animacion del GIF, hecho. Fase 02, shell con gestos y registro de apps, parcial: registro y carrusel hechos. Fase 03, app Fondo, parcial: subida por la red hecha. Fase 04, WiFi con scan, QR y SoftAP, hecho. Fase 05, subir GIFs por la red local, hecho. Fase 06, hora por SNTP y OTA, parcial: el RTC ya funciona.">
   <rect width="880" height="540" fill="#0A0A0A"/>
 
   <line x1="116" y1="60" x2="116" y2="476" stroke="#1F1F1F" stroke-width="1"/>
@@ -17,12 +17,13 @@
   <g>
     <circle cx="116" cy="60" r="5" fill="#FAFAFA"/>
     <circle cx="116" cy="119" r="5" fill="#FAFAFA"/>
-    <circle cx="116" cy="178" r="4.5" fill="#0A0A0A" stroke="#5A5A5A" stroke-width="1.2"/>
+    <circle cx="116" cy="178" r="5" fill="#FAFAFA"/>
     <circle cx="116" cy="237" r="5" fill="#0A0A0A" stroke="#FAFAFA" stroke-width="1.4"/>
     <circle cx="116" cy="237" r="2" fill="#FAFAFA"/>
-    <circle cx="116" cy="296" r="4.5" fill="#0A0A0A" stroke="#5A5A5A" stroke-width="1.2"/>
+    <circle cx="116" cy="296" r="5" fill="#0A0A0A" stroke="#FAFAFA" stroke-width="1.4"/>
+    <circle cx="116" cy="296" r="2" fill="#FAFAFA"/>
     <circle cx="116" cy="355" r="5" fill="#FAFAFA"/>
-    <circle cx="116" cy="414" r="4.5" fill="#0A0A0A" stroke="#5A5A5A" stroke-width="1.2"/>
+    <circle cx="116" cy="414" r="5" fill="#FAFAFA"/>
     <circle cx="116" cy="473" r="5" fill="#0A0A0A" stroke="#FAFAFA" stroke-width="1.4"/>
     <circle cx="116" cy="473" r="2" fill="#FAFAFA"/>
   </g>
@@ -30,12 +31,13 @@
   <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif" font-size="16">
     <text x="148" y="65" fill="#FAFAFA">Base: panel, splash y bateria</text>
     <text x="148" y="124" fill="#FAFAFA">Imagen de inicio: primer frame</text>
-    <text x="148" y="183" fill="#8A8A8A">Animacion del GIF</text>
+    <text x="148" y="183" fill="#FAFAFA">Animacion del GIF</text>
     <text x="148" y="242" fill="#FAFAFA">Shell: gestos y registro de apps</text>
-    <text x="148" y="262" fill="#8A8A8A" font-size="12">Barra de estado y carrusel, hechos</text>
-    <text x="148" y="301" fill="#8A8A8A">App Fondo</text>
+    <text x="148" y="262" fill="#8A8A8A" font-size="12">Registro y carrusel, hechos</text>
+    <text x="148" y="301" fill="#FAFAFA">App Fondo</text>
+    <text x="148" y="321" fill="#8A8A8A" font-size="12">Subida por la red, hecha</text>
     <text x="148" y="360" fill="#FAFAFA">WiFi: scan, QR + SoftAP, NVS</text>
-    <text x="148" y="419" fill="#8A8A8A">Subir GIFs por la red local</text>
+    <text x="148" y="419" fill="#FAFAFA">Subir GIFs por la red local</text>
     <text x="148" y="478" fill="#FAFAFA">Hora por SNTP y OTA a ota_0</text>
     <text x="148" y="498" fill="#8A8A8A" font-size="12">RTC PCF85063A, hecho</text>
   </g>
@@ -43,11 +45,11 @@
   <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif" font-size="11" letter-spacing="1.8" text-anchor="end">
     <text x="816" y="65" fill="#FAFAFA">HECHO</text>
     <text x="816" y="124" fill="#FAFAFA">HECHO</text>
-    <text x="816" y="183" fill="#8A8A8A">PLANEADO</text>
+    <text x="816" y="183" fill="#FAFAFA">HECHO</text>
     <text x="816" y="242" fill="#B4B4B4">PARCIAL</text>
-    <text x="816" y="301" fill="#8A8A8A">PLANEADO</text>
+    <text x="816" y="301" fill="#B4B4B4">PARCIAL</text>
     <text x="816" y="360" fill="#FAFAFA">HECHO</text>
-    <text x="816" y="419" fill="#8A8A8A">PLANEADO</text>
+    <text x="816" y="419" fill="#FAFAFA">HECHO</text>
     <text x="816" y="478" fill="#B4B4B4">PARCIAL</text>
   </g>
 </svg>

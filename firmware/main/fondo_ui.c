@@ -2,6 +2,7 @@
 
 #include "fondo_http.h"
 #include "shell.h"
+#include "splash_gif.h"
 #include "svc_wifi.h"
 #include "ui_theme.h"
 
@@ -202,6 +203,45 @@ static void close_clicked(lv_event_t *event)
     shell_close_app();
 }
 
+static void quitar_cb(void *arg)
+{
+    LV_UNUSED(arg);
+    const esp_err_t err = splash_gif_clear();
+    if (s_status != NULL) {
+        lv_label_set_text(s_status, err == ESP_OK ? "fondo quitado" : "no se pudo quitar");
+    }
+    if (s_hint != NULL) {
+        lv_label_set_text(s_hint, "home sin imagen");
+    }
+}
+
+static void quitar_clicked(lv_event_t *event)
+{
+    LV_UNUSED(event);
+    lv_async_call(quitar_cb, NULL);
+}
+
+static void add_bottom_actions(lv_obj_t *root, const char *close_text)
+{
+    lv_obj_t *quitar = lv_button_create(root);
+    lv_obj_set_size(quitar, 100, 36);
+    lv_obj_align(quitar, LV_ALIGN_BOTTOM_MID, -58, -12);
+    lv_obj_add_event_cb(quitar, quitar_clicked, LV_EVENT_CLICKED, NULL);
+    style_button(quitar, false);
+    lv_obj_t *quitar_label = lv_label_create(quitar);
+    lv_label_set_text(quitar_label, "Quitar");
+    lv_obj_center(quitar_label);
+
+    lv_obj_t *close = lv_button_create(root);
+    lv_obj_set_size(close, 100, 36);
+    lv_obj_align(close, LV_ALIGN_BOTTOM_MID, 58, -12);
+    lv_obj_add_event_cb(close, close_clicked, LV_EVENT_CLICKED, NULL);
+    style_button(close, false);
+    lv_obj_t *close_label = lv_label_create(close);
+    lv_label_set_text(close_label, close_text);
+    lv_obj_center(close_label);
+}
+
 static void build_offline(lv_obj_t *root)
 {
     lv_obj_t *title = lv_label_create(root);
@@ -226,14 +266,7 @@ static void build_offline(lv_obj_t *root)
     lv_obj_set_style_text_align(note, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(note, LV_ALIGN_CENTER, 0, 16);
 
-    lv_obj_t *close = lv_button_create(root);
-    lv_obj_set_size(close, 92, 36);
-    lv_obj_align(close, LV_ALIGN_BOTTOM_MID, 0, -12);
-    lv_obj_add_event_cb(close, close_clicked, LV_EVENT_CLICKED, NULL);
-    style_button(close, false);
-    lv_obj_t *close_label = lv_label_create(close);
-    lv_label_set_text(close_label, "Cerrar");
-    lv_obj_center(close_label);
+    add_bottom_actions(root, "Cerrar");
 }
 
 static void build_online(lv_obj_t *root)
@@ -331,14 +364,7 @@ static void build_online(lv_obj_t *root)
     lv_obj_set_style_text_font(wait_l, UI_FONT_BODY, 0);
     lv_obj_align(wait_l, LV_ALIGN_BOTTOM_MID, 0, -8);
 
-    lv_obj_t *close = lv_button_create(root);
-    lv_obj_set_size(close, 110, 36);
-    lv_obj_align(close, LV_ALIGN_BOTTOM_MID, 0, -12);
-    lv_obj_add_event_cb(close, close_clicked, LV_EVENT_CLICKED, NULL);
-    style_button(close, false);
-    lv_obj_t *close_label = lv_label_create(close);
-    lv_label_set_text(close_label, "Cancelar");
-    lv_obj_center(close_label);
+    add_bottom_actions(root, "Cancelar");
 
     s_timer = lv_timer_create(tick, 100, NULL);
 }

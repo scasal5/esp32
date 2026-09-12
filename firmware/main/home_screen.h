@@ -21,7 +21,8 @@ void home_screen_set_gif(lv_obj_t *gif);
 
 /*
  * Frena o reanuda el fondo animado. Lo llama el shell cuando algo tapa la
- * pantalla de inicio: el GIF cuesta lo mismo tapado que a la vista. Sin fondo
- * animado no hace nada. Lock de LVGL tomado.
+ * pantalla de inicio: el GIF cuesta lo mismo tapado que a la vista. El estado
+ * se guarda aunque no haya GIF, para que un fondo subido con Fondo abierta
+ * nazca en pausa. Lock de LVGL tomado.
  */
 void home_screen_pause_bg(bool paused);

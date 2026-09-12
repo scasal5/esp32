@@ -17,16 +17,16 @@ Hecho para modificarse.
 
 ## Estado
 
-<img src="docs/brand/estado.svg" alt="Funciona: panel ST7789 y backlight, bateria en solo lectura, imagen de inicio, hora y estado en pantalla, carrusel de apps, WiFi, RTC. En camino: animacion del GIF, gestos, registro de apps, app Fondo. Planeado: subida por red local, SNTP y OTA, IMU, audio, microSD." width="100%">
+<img src="docs/brand/estado.svg" alt="Funciona: panel ST7789 y backlight, bateria en solo lectura, fondo GIF animado, hora y estado en pantalla, carrusel y registro de apps, WiFi, RTC, Fondo con subida por la red. En camino: gestos, encuadre y dibujo en Fondo. Planeado: SNTP y OTA, IMU, audio, microSD." width="100%">
 
 **Funciona** — panel ST7789 y backlight sin parpadeo al arrancar · bateria por AXP2101
-en solo lectura · primer frame de `assets/splash.gif` como fondo · hora y estado en
-pantalla · carrusel de apps con BOOT y tactil · WiFi con scan y provision por QR ·
-RTC PCF85063A.
+en solo lectura · `assets/splash.gif` animado como fondo · hora y estado en
+pantalla · carrusel de apps con BOOT, tactil y registro · WiFi con scan y provision
+por QR · RTC PCF85063A · app *Fondo* con subida por la red local.
 
-**En camino** — animacion del GIF · gestos · registro de apps · app *Fondo*.
+**En camino** — gestos · encuadre y dibujo en *Fondo*.
 
-**Planeado** — subida de GIFs por la red local · SNTP y OTA · IMU · audio · microSD.
+**Planeado** — SNTP y OTA · IMU · audio · microSD.
 
 Todo lo que este documento marca como *planeado* todavia no existe.
 
@@ -256,20 +256,20 @@ Lo que se puede cambiar hoy, sin tocar el resto del firmware:
 
 ## Imagen de inicio
 
-La imagen de inicio es **un GIF**, animado o de un solo frame: para cambiarla alcanza con
-reemplazar un archivo, sin conversores. Vive en
+La imagen de inicio es **un GIF** animado, o un PNG estatico. Hay un solo archivo
+a la vez: lo que se sube desde *Fondo* reemplaza al anterior, y Quitar deja la
+home sin imagen. El GIF de fabrica vive en
 [`assets/splash.gif`](assets/splash.gif) y se graba en la particion `assets`.
 
 | | Regla |
 |---|---|
-| Formato | GIF, animado o de un frame |
+| Formato | GIF animado, o PNG estatico |
 | Tamano | hasta **240 px de ancho** y **284 px de alto**; no se escala en la placa |
 | Opcional | si falta o no es valido, se ve la pantalla de inicio sin fondo |
 
-Hoy se usa **el primer frame**: se decodifica una sola vez, se reduce a 3/5, se desenfoca
-y se atenua al 60 %, y queda como fondo de la pantalla de inicio. La animacion completa
-es la fase 1b, con decodificacion y PSRAM medidas en hardware. Limites, memoria y
-secuencia de carga en [`docs/arquitectura.md`](docs/arquitectura.md#imagen-de-inicio).
+El GIF se reproduce a tamano completo con `lv_gif`. Un PNG se reduce, se desenfoca
+y se atenua, y queda como fondo fijo. Limites, memoria y secuencia de carga en
+[`docs/arquitectura.md`](docs/arquitectura.md#imagen-de-inicio).
 
 Grabar la imagen en la placa:
 
@@ -361,18 +361,19 @@ al repo.
 
 ## Hoja de ruta
 
-<img src="docs/brand/roadmap.svg" alt="Fase 00 base, hecho. Fase 01a imagen de inicio, hecho. Fase 01b animacion del GIF, planeado. Fase 02 shell, parcial. Fase 03 app Fondo, planeado. Fase 04 WiFi, hecho. Fase 05 subir GIFs por la red local, planeado. Fase 06 hora por SNTP y OTA, parcial." width="100%">
+<img src="docs/brand/roadmap.svg" alt="Fase 00 base, hecho. Fase 01a imagen de inicio, hecho. Fase 01b animacion del GIF, hecho. Fase 02 shell, parcial. Fase 03 app Fondo, parcial. Fase 04 WiFi, hecho. Fase 05 subir GIFs por la red local, hecho. Fase 06 hora por SNTP y OTA, parcial." width="100%">
 
 - **00 · Base** — panel, splash y bateria en solo lectura. *Hecho.*
 - **01a · Imagen de inicio** — primer frame de `splash.gif` desde `assets`, con la
   pantalla de inicio como respaldo si falta. *Hecho.*
 - **01b · Animacion** — reproducir `splash.gif`, con decodificacion y PSRAM medidas en
-  hardware. *Planeado.*
+  hardware. *Hecho.*
 - **02 · Shell** — gestos, barra de estado y registro de apps. *Parcial:* la barra de
-  estado y el carrusel existen; los gestos y `shell_register_app()` no.
-- **03 · App Fondo** — elegir imagen, encuadrarla y dibujar encima. *Planeado.*
+  estado, el carrusel y `shell_register_app()` existen; los gestos no.
+- **03 · App Fondo** — elegir imagen, encuadrarla y dibujar encima. *Parcial:* la
+  subida por la red local existe; encuadre y dibujo no.
 - **04 · WiFi** — scan, QR + SoftAP para la clave, recordar en NVS. *Hecho.*
-- **05 · Transferencia local** — subir GIFs desde el celular por la red local. *Planeado.*
+- **05 · Transferencia local** — subir GIFs desde el celular por la red local. *Hecho.*
 - **06 · Hora y OTA** — SNTP y actualizaciones OTA a `ota_0`. *Parcial:* el RTC
   PCF85063A ya da la hora; SNTP y OTA no existen.
 - **CI** — cada PR corre `idf.py build` con ESP-IDF 5.5.1 contra `firmware/`. *Hecho.*

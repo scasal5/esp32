@@ -171,8 +171,10 @@ No hay teclado en la placa. Redes abiertas no se conectan.
 ## Imagen de inicio
 
 **Decision:** la imagen de inicio es un GIF, `/spiffs/splash.gif`, reproducido con
-`lv_gif` de LVGL. Quien quiera cambiarla reemplaza un archivo; no hay conversor en
-el camino. Una imagen estatica es un GIF de un solo frame.
+`lv_gif` de LVGL, o un PNG estatico `/spiffs/splash.png`. Hay **un solo archivo
+a la vez**: lo que se sube desde Fondo reemplaza al anterior, y
+`splash_gif_clear()` deja la home sin imagen. El recorte a 240x284 lo hace el
+celular (`main/fondo_form.html`); la placa no reescala.
 
 Todo lo que sigue se verifico contra LVGL 9.5.0 y esp_lvgl_port 2.9.0, las
 versiones de `dependencies.lock`.
@@ -287,8 +289,10 @@ Evitar:
 
 El GIF de inicio se reproduce: `lv_gif` queda en la pantalla de inicio, loop
 infinito (`lv_gif_set_loop_count(gif, 0)`), sin pausar el timer. Un PNG
-subido desde Fondo sigue siendo fondo estatico. Un GIF se recorta a 240x284
-en el celular (se conservan los frames) y pisa `splash.gif`.
+subido desde Fondo sigue siendo fondo estatico y **borra** `splash.gif`. Un GIF
+se recorta a 240x284 en el celular (se conservan los frames), pisa
+`splash.gif` y **borra** `splash.png`. Si una placa vieja todavia tiene los
+dos, el arranque carga uno y borra el otro.
 
 - **No** usar `lv_gif_restart()`: fuerza `loop_count = -1`, y la animacion se
   detiene al completar una vuelta.
@@ -302,9 +306,10 @@ en el celular (se conservan los frames) y pisa `splash.gif`.
   que sabe si la home esta tapada. Un GIF a pantalla completa cuesta lo mismo
   tapado que a la vista. El estado se guarda: si Fondo esta abierta y le subis
   un fondo nuevo, el objeto nace en pausa.
-- El objeto solo se borra al reemplazar el fondo, y ahi tambien se libera el
-  archivo en PSRAM. El destructor de `lv_gif` cierra el decodificador, libera el
-  framebuffer y borra el timer; el buffer del archivo es nuestro.
+- El objeto se borra al reemplazar el fondo o al quitarlo (`splash_gif_clear()`
+  desde Fondo), y ahi tambien se libera el archivo en PSRAM. El destructor de
+  `lv_gif` cierra el decodificador, libera el framebuffer y borra el timer; el
+  buffer del archivo es nuestro.
 
 Medido en la placa (sonda sobre `lv_gif_get_current_frame_index()`, ventanas de
 10 s): **109 ms por frame** contra los 70 ms que pide el archivo. La
@@ -318,11 +323,12 @@ PSRAM (~2,7 MB) y cambiar el `src` de un `lv_image`.
 
 ### Guardado seguro
 
-Aplica cuando la placa escribe `splash.gif`: subida desde el celular (fase 5) o
-copia desde la microSD. La app Fondo, con STA en IP, muestra un QR a
-`http://<IP>/`. El primer HTTP pide Si/No con la MAC (un cliente; 30 s). Recien
-con Si el celular ve el input de png/jpg/gif; el JS lo deja en 240x284 y manda
-un GIF. El httpd vive solo mientras Fondo esta abierta.
+Aplica cuando la placa escribe `splash.gif` o `splash.png`: subida desde el
+celular (fase 5) o copia desde la microSD. La app Fondo, con STA en IP, muestra
+un QR a `http://<IP>/`. El primer HTTP pide Si/No con la MAC (un cliente; 30 s).
+Recien con Si el celular ve el input de png/jpg/gif; el JS lo deja en 240x284 y
+manda un GIF o un PNG. Quitar el fondo no necesita red: borra los dos archivos
+y deja la home sin imagen. El httpd vive solo mientras Fondo esta abierta.
 
 En SPIFFS, `rename()` **falla si el destino ya existe**
 (`SPIFFS_ERR_CONFLICTING_NAME` en `SPIFFS_rename`), asi que el truco de escribir un
