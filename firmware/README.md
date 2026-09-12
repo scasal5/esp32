@@ -113,11 +113,26 @@ del carrusel, ejecuta un scan asincrono y muestra hasta 16 redes cercanas, orden
 RSSI. Los SSID repetidos se consolidan y se conserva la senal mas fuerte; las protegidas
 llevan `*`. Las ocultas no se listan.
 
-Tocar una red abierta conecta al toque. Tocar una red con clave abre un SoftAP
-`ws183-XXXX` y un QR `WIFI:T:nopass;S:ws183-XXXX;;`. El celular se une al AP, el captive
-portal pide la contrasena (el SSID ya esta elegido) y la placa conecta como STA. La clave
-se guarda en NVS, namespace `wifi`; no se loguea. Al conseguir IP, el SoftAP se apaga y
-la barra de inicio muestra **WiFi**.
+Tocar una red abierta no conecta: solo se aceptan redes con clave. Tocar una red con `*`
+abre un SoftAP `ws183-XXXX` y un QR `WIFI:T:nopass;S:ws183-XXXX;;`, y la pantalla indica
+`luego 192.168.4.1`.
+
+```
+QR  ──►  ws183-XXXX  ──►  192.168.4.1  ──►  red + clave  ──►  STA
+         el celular       portal            formulario        la placa
+         se une al AP     captivo           y contrasena      conecta
+```
+
+Escanear el QR une el celular al SoftAP, nada mas: no cambia la red del celular. Cuando
+entra, la placa avisa `celular unido` y `clave en 192.168.4.1`. El portal vive en esa
+direccion y el celular deberia abrirlo solo: un DNS propio responde todo a `192.168.4.1`,
+estan las URLs de deteccion de Apple, Android y Windows, y la API de RFC 8908 se anuncia
+por DHCP (opcion 114, RFC 8910).
+
+El formulario lista las redes con clave del ultimo scan, con la tocada ya elegida, y pide
+la contrasena. Al enviarlo, la placa conecta como STA. La clave se guarda en NVS,
+namespace `wifi`; no se loguea. Al conseguir IP, el SoftAP se apaga y la barra de inicio
+muestra **WiFi**. Cerrar el QR sin escanear no deja el STA asociado.
 
 BOOT o **Cerrar** corta el portal y vuelve al inicio. Si WiFi no pudo iniciar, la pantalla
 muestra `WiFi no listo` y el resto del firmware sigue funcionando.

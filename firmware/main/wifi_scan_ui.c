@@ -56,7 +56,7 @@ static void show_qr_for_pick(void)
         lv_qrcode_set_data(s_qr, svc_wifi_prov_qr());
     }
     if (s_hint != NULL) {
-        lv_label_set_text(s_hint, "luego 192.168.4.1");
+        lv_label_set_text(s_hint, "el celular pide la clave");
     }
 }
 
@@ -146,7 +146,7 @@ static void wifi_scan_tick(lv_timer_t *timer)
         s_prov_client = false;
         lv_label_set_text(s_status, "celular unido");
         if (s_hint != NULL) {
-            lv_label_set_text(s_hint, "clave en 192.168.4.1");
+            lv_label_set_text(s_hint, "mira el celular");
         }
         return;
     }

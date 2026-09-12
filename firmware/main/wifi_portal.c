@@ -18,7 +18,8 @@
 static const char *TAG = "wifi_portal";
 
 #define DNS_PORT 53
-#define PORTAL_URI "http://192.168.4.1"
+#define PORTAL_URI     "http://192.168.4.1/"
+#define PORTAL_API_URI "http://192.168.4.1/captive-portal"
 
 static httpd_handle_t s_httpd;
 static TaskHandle_t s_dns_task;
@@ -146,9 +147,11 @@ static void build_ssid_options(char *out, size_t n)
 static esp_err_t send_form(httpd_req_t *req)
 {
     char opts[1200];
+    char esc[80];
     build_ssid_options(opts, sizeof(opts));
+    html_escape(s_target, esc, sizeof(esc));
 
-    static char page[2048];
+    static char page[2200];
     snprintf(page, sizeof(page),
              "<!DOCTYPE html><html><head>"
              "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
@@ -159,20 +162,34 @@ static esp_err_t send_form(httpd_req_t *req)
              "select,input,button{width:100%%;box-sizing:border-box;padding:14px;"
              "margin:10px 0;font-size:18px;border-radius:10px;border:0}"
              "button{background:#3B82F6;color:#fff}"
+             ".net{font-size:22px;font-weight:700;margin:12px 0}"
              "</style></head><body>"
-             "<h2>ws183-os</h2>"
-             "<p>Elegi la red de tu casa y escribi la clave.</p>"
+             "<h2>Conectar la placa</h2>"
+             "<p class=\"net\">Red: %s</p>"
+             "<p>Escribi la clave de esa red. Esto no cambia el WiFi del celular.</p>"
              "<form method=\"POST\" action=\"/connect\">"
              "<select name=\"ssid\">%s</select>"
              "<input type=\"password\" name=\"pass\" placeholder=\"contrasena\" "
-             "autofocus>"
-             "<button type=\"submit\">Conectar</button></form>"
+             "autofocus required>"
+             "<button type=\"submit\">Conectar la placa</button></form>"
              "</body></html>",
-             opts);
+             esc, opts);
 
     httpd_resp_set_type(req, "text/html");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     return httpd_resp_send(req, page, HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t send_captive_api(httpd_req_t *req)
+{
+    /* RFC 8908: el celular abre user-portal-url solo, sin que el usuario
+       tenga que escribir 192.168.4.1. */
+    httpd_resp_set_type(req, "application/captive+json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    return httpd_resp_sendstr(req,
+        "{\"captive\":true,"
+        "\"user-portal-url\":\"http://192.168.4.1/\"}");
 }
 
 static esp_err_t connect_post(httpd_req_t *req)
@@ -220,6 +237,28 @@ static esp_err_t http_404(httpd_req_t *req, httpd_err_code_t err)
     return send_form(req);
 }
 
+/* Fin del question (header + labels + type/class). Ignora EDNS extra. */
+static int dns_question_end(const uint8_t *req, int n)
+{
+    int i = 12;
+    if (n < 16) {
+        return -1;
+    }
+    while (i < n) {
+        uint8_t lab = req[i];
+        if (lab == 0) {
+            i += 5;
+            return (i <= n) ? i : -1;
+        }
+        if ((lab & 0xC0) == 0xC0) {
+            i += 6;
+            return (i <= n) ? i : -1;
+        }
+        i += 1 + (int)lab;
+    }
+    return -1;
+}
+
 static void dns_task(void *arg)
 {
     (void)arg;
@@ -255,32 +294,35 @@ static void dns_task(void *arg)
         struct sockaddr_in src;
         socklen_t slen = sizeof(src);
         int n = recvfrom(sock, req, sizeof(req), 0, (struct sockaddr *)&src, &slen);
-        if (n < (int)sizeof(uint16_t) * 6) {
+        int qend = dns_question_end(req, n);
+        if (qend < 0 || qend > (int)sizeof(req) - 16) {
             continue;
         }
 
-        /* Copia la consulta y responde A 192.168.4.1 con puntero al nombre. */
         uint8_t reply[512];
-        if (n > (int)sizeof(reply) - 16) {
-            continue;
-        }
-        memcpy(reply, req, (size_t)n);
-        reply[2] |= 0x80; /* QR */
-        reply[3] = 0x80;  /* RA */
+        memcpy(reply, req, (size_t)qend);
+        reply[2] |= 0x80;
+        reply[3] = 0x80;
+        reply[4] = 0;
+        reply[5] = 1;
         reply[6] = 0;
-        reply[7] = 1; /* an_count = 1 */
+        reply[7] = 1;
+        reply[8] = 0;
+        reply[9] = 0;
+        reply[10] = 0;
+        reply[11] = 0;
 
-        int i = n;
+        int i = qend;
         reply[i++] = 0xC0;
         reply[i++] = 0x0C;
         reply[i++] = 0x00;
-        reply[i++] = 0x01; /* A */
+        reply[i++] = 0x01;
         reply[i++] = 0x00;
-        reply[i++] = 0x01; /* IN */
+        reply[i++] = 0x01;
         reply[i++] = 0x00;
         reply[i++] = 0x00;
         reply[i++] = 0x00;
-        reply[i++] = 30; /* TTL */
+        reply[i++] = 30;
         reply[i++] = 0x00;
         reply[i++] = 0x04;
         reply[i++] = 192;
@@ -303,7 +345,8 @@ static void set_dhcp_captive(void)
     if (ap == NULL) {
         return;
     }
-    static char uri[] = PORTAL_URI;
+    /* RFC 8910: option 114 apunta a la API JSON, no a la pagina HTML. */
+    static char uri[] = PORTAL_API_URI;
     esp_netif_dhcps_stop(ap);
     esp_err_t err = esp_netif_dhcps_option(ap, ESP_NETIF_OP_SET,
                                            ESP_NETIF_CAPTIVEPORTAL_URI,
@@ -335,7 +378,7 @@ esp_err_t wifi_portal_start(const char *target_ssid, wifi_portal_on_pass_t cb)
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.lru_purge_enable = true;
     cfg.max_open_sockets = 7;
-    cfg.max_uri_handlers = 12;
+    cfg.max_uri_handlers = 16;
     esp_err_t err = httpd_start(&s_httpd, &cfg);
     if (err != ESP_OK) {
         return err;
@@ -362,6 +405,13 @@ esp_err_t wifi_portal_start(const char *target_ssid, wifi_portal_on_pass_t cb)
     static const httpd_uri_t uri_ncsi = {
         .uri = "/connecttest.txt", .method = HTTP_GET, .handler = send_form
     };
+    static const httpd_uri_t uri_api = {
+        .uri = "/captive-portal", .method = HTTP_GET, .handler = send_captive_api
+    };
+    static const httpd_uri_t uri_wellknown = {
+        .uri = "/.well-known/captive-portal", .method = HTTP_GET,
+        .handler = send_captive_api
+    };
     httpd_register_uri_handler(s_httpd, &uri_root);
     httpd_register_uri_handler(s_httpd, &uri_connect);
     httpd_register_uri_handler(s_httpd, &uri_g204);
@@ -369,6 +419,8 @@ esp_err_t wifi_portal_start(const char *target_ssid, wifi_portal_on_pass_t cb)
     httpd_register_uri_handler(s_httpd, &uri_hotspot);
     httpd_register_uri_handler(s_httpd, &uri_success);
     httpd_register_uri_handler(s_httpd, &uri_ncsi);
+    httpd_register_uri_handler(s_httpd, &uri_api);
+    httpd_register_uri_handler(s_httpd, &uri_wellknown);
     httpd_register_err_handler(s_httpd, HTTPD_404_NOT_FOUND, http_404);
 
     s_dns_run = true;
