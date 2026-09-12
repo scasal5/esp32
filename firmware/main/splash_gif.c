@@ -152,7 +152,14 @@ static lv_obj_t *gif_from_mem(const uint8_t *data, size_t len)
     s_dsc.data_size = len;
 
     lv_obj_t *gif = lv_gif_create(lv_screen_active());
-    lv_gif_set_color_format(gif, LV_COLOR_FORMAT_ARGB8888);
+    /*
+     * RGB565, el formato del panel. ARGB8888 solo sirve para que el indice
+     * transparente del GIF llegue como alfa 0, y los fondos que entran por
+     * Fondo no lo usan: el conversor rellena los 240x284 completos. Con
+     * RGB565 el framebuffer baja de 272 KB a 136 KB y el dibujado es una
+     * copia en vez de una mezcla por pixel.
+     */
+    lv_gif_set_color_format(gif, LV_COLOR_FORMAT_RGB565);
     lv_gif_set_src(gif, &s_dsc);
     if (!lv_gif_is_loaded(gif)) {
         lv_obj_delete(gif);
@@ -168,7 +175,11 @@ static lv_obj_t *gif_from_mem(const uint8_t *data, size_t len)
      * la animacion queda congelada en el frame 1 para siempre.
      */
     lv_gif_set_auto_pause_invisible(gif, false);
-    lv_obj_set_style_opa(gif, LV_OPA_80, 0);
+    /*
+     * Sin LV_OPA_80: atenuar aca obliga a LVGL a mezclar los 68.160 pixeles
+     * contra el fondo en cada frame. El atenuado lo hace el conversor, que lo
+     * paga una sola vez (scripts/gif_to_panel.py y main/fondo_form.html).
+     */
     lv_obj_center(gif);
     ESP_LOGI(TAG, "gif frames=%d", (int)lv_gif_get_frame_count(gif));
     return gif;

@@ -11,6 +11,7 @@
 #include "app_ajustes.h"
 #include "board_rtc.h"
 #include "boot_splash.h"
+#include "display.h"
 #include "fondo_ui.h"
 #include "menu_button.h"
 #include "pm.h"
@@ -70,8 +71,9 @@ void app_main(void)
     }
     bsp_display_backlight_off();
 
-    /* 3. Panel + LVGL. */
-    lv_display_t *disp = bsp_display_start();
+    /* 3. Panel + LVGL. No es bsp_display_start(): ese arma un solo buffer sin
+          DMA. Ver main/display.c. */
+    lv_display_t *disp = display_start();
     if (disp == NULL) {
         ESP_LOGE(TAG, "bsp_display_start() devolvio NULL");
         return;

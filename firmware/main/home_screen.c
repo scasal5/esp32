@@ -112,6 +112,25 @@ void home_screen_set_gif(lv_obj_t *gif)
     lv_obj_move_to_index(gif, 0);
 }
 
+/*
+ * Un GIF a pantalla completa cuesta lo mismo este tapado o no: decodifica el
+ * frame, lo mezcla y lo manda por SPI igual. LVGL trae un auto-pause por
+ * visibilidad, pero pausa sin reanudar nunca (ver gif_from_mem en splash_gif.c),
+ * asi que lo decide el shell, que es el unico que sabe si la home esta a la
+ * vista.
+ */
+void home_screen_pause_bg(bool paused)
+{
+    if (s_gif == NULL) {
+        return;
+    }
+    if (paused) {
+        lv_gif_pause(s_gif);
+    } else {
+        lv_gif_resume(s_gif);
+    }
+}
+
 void home_screen_set_bg(lv_draw_buf_t *bg)
 {
     if (s_gif != NULL) {

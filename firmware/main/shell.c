@@ -13,6 +13,7 @@
 #include "shell.h"
 
 #include "app_menu.h"
+#include "home_screen.h"
 #include "menu_button.h"
 #include "ui_theme.h"
 
@@ -122,6 +123,10 @@ static void menu_gone(void *obj)
 {
     LV_UNUSED(obj);
     app_menu_hide();
+    /* La home vuelve a estar a la vista: el fondo animado tiene sentido otra
+       vez. Se reanuda al final del fade, no al principio, para no pagar
+       decodificacion durante la transicion. */
+    home_screen_pause_bg(false);
     ESP_LOGI(TAG, "lanzador cerrado");
 }
 
@@ -191,6 +196,8 @@ static void unmount_app(void *obj)
         s_root = NULL;
     }
 
+    /* Se vuelve a la home: el fondo animado arranca de nuevo. */
+    home_screen_pause_bg(false);
     ESP_LOGI(TAG, "app cerrada %s", id);
 }
 
@@ -247,6 +254,10 @@ static void back_cb(void *arg)
         return;
     }
 
+    /* El lanzador tapa la home: el fondo animado deja de tener quien lo mire y
+       se frena antes de empezar el fade, para que la transicion tenga la CPU
+       libre. Vuelve en menu_gone() o en unmount_app(). */
+    home_screen_pause_bg(true);
     app_menu_show(s_apps, s_app_count, on_pick);
     ESP_LOGI(TAG, "lanzador abierto");
     shell_fade(app_menu_obj(), true, NULL);

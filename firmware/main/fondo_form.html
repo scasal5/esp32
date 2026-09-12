@@ -31,7 +31,7 @@ button{background:#FAFAFA;color:#0A0A0A}
 </div>
 <script>
 const $=id=>document.getElementById(id);
-const W=240,H=284,MAX=1048576,MIN_CS=7,PAL_N=128,BG=10;
+const W=240,H=284,MAX=1048576,MIN_CS=7,PAL_N=128,BG=10,DIM=204/255;
 let ac=null,dead=false;
 function show(id){['box','wait','ok','fail','bye'].forEach(x=>$(x).classList.add('hide'));$(id).classList.remove('hide');}
 function bye(){if(dead)return;dead=true;if(ac)ac.abort();show('bye');}
@@ -342,6 +342,18 @@ async function gifToFit(file){
   }
   if(!frames){
     frames=scaleCover(compose(parseGif(u)));
+  }
+  /* Atenuado horneado, igual que scripts/gif_to_panel.py: out = v*DIM + BG*(1-DIM).
+     Antes lo hacia la placa con LV_OPA_80 y le costaba una mezcla por pixel en
+     cada frame. Va antes de la paleta para que los 128 colores salgan ya
+     atenuados. El relleno BG queda igual: 10*0.8+2 = 10. */
+  for(const fr of frames){
+    const d=fr.rgba;
+    for(let i=0;i<d.length;i+=4){
+      d[i]=Math.round(d[i]*DIM+BG*(1-DIM));
+      d[i+1]=Math.round(d[i+1]*DIM+BG*(1-DIM));
+      d[i+2]=Math.round(d[i+2]*DIM+BG*(1-DIM));
+    }
   }
   const pal=palFromFrames(frames);
   let bin=encodeGif(frames, pal);

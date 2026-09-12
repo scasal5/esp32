@@ -11,6 +11,14 @@ PANEL_W = 240
 PANEL_H = 284
 MIN_DELAY_MS = 70
 
+# Atenuado del fondo, para que el texto blanco de la barra se lea encima.
+# Antes lo hacia la placa con LV_OPA_80 sobre el fondo #0A0A0A, y le costaba una
+# mezcla por pixel en cada frame. Aca sale igual y se paga una sola vez:
+#   out = src * 204/255 + 10 * (1 - 204/255) = src * 0.8 + 2
+# El propio relleno (10, 10, 10) queda intacto: 10 * 0.8 + 2 = 10.
+DIM = 204 / 255
+PANEL_BG = 10
+
 
 def cover_to_panel(im: Image.Image) -> Image.Image:
     im = im.convert("RGBA")
@@ -22,9 +30,11 @@ def cover_to_panel(im: Image.Image) -> Image.Image:
     left = (nw - PANEL_W) // 2
     top = (nh - PANEL_H) // 2
     cropped = im.crop((left, top, left + PANEL_W, top + PANEL_H))
-    bg = Image.new("RGB", (PANEL_W, PANEL_H), (10, 10, 10))
+    bg = Image.new("RGB", (PANEL_W, PANEL_H), (PANEL_BG, PANEL_BG, PANEL_BG))
     bg.paste(cropped, mask=cropped.split()[3])
-    return bg
+    # Atenuar antes de cuantizar: los 128 colores de la paleta salen ya
+    # atenuados, en vez de perder precision atenuando una paleta chica.
+    return bg.point(lambda v: round(v * DIM + PANEL_BG * (1 - DIM)))
 
 
 def compose_frames(src: Image.Image) -> tuple[list[Image.Image], list[int]]:
