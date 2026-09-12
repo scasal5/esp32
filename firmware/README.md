@@ -114,20 +114,17 @@ RSSI. Los SSID repetidos se consolidan y se conserva la senal mas fuerte; las pr
 llevan `*`. Las ocultas no se listan.
 
 Tocar una red abierta no conecta: solo se aceptan redes con clave. Tocar una red con `*`
-abre un SoftAP `ws183-XXXX` y un QR `WIFI:T:nopass;S:ws183-XXXX;;`, y la pantalla indica
-`luego 192.168.4.1`.
+abre un SoftAP `ws183-XXXX` y un primer QR `WIFI:T:nopass;S:ws183-XXXX;;`.
 
 ```
-QR  ──►  ws183-XXXX  ──►  192.168.4.1  ──►  red + clave  ──►  STA
-         el celular       portal            formulario        la placa
-         se une al AP     captivo           y contrasena      conecta
+QR 1  ──►  ws183-XXXX  ──►  QR 2 http://192.168.4.1/  ──►  clave  ──►  STA
+           el celular       se actualiza al unirse          form      la placa
+           se une al AP     abre el navegador
 ```
 
-Escanear el QR une el celular al SoftAP, nada mas: no cambia la red del celular. Cuando
-entra, la placa avisa `celular unido` y `clave en 192.168.4.1`. El portal vive en esa
-direccion y el celular deberia abrirlo solo: un DNS propio responde todo a `192.168.4.1`,
-estan las URLs de deteccion de Apple, Android y Windows, y la API de RFC 8908 se anuncia
-por DHCP (opcion 114, RFC 8910).
+El primer QR solo une el celular al SoftAP. Cuando entra un cliente, la placa
+cambia el QR a la URL del portal para que el segundo escaneo abra el formulario
+con la red elegida y el campo de clave. Recien entonces la placa conecta como STA.
 
 El formulario lista las redes con clave del ultimo scan, con la tocada ya elegida, y pide
 la contrasena. Al enviarlo, la placa conecta como STA. La clave se guarda en NVS,
@@ -227,8 +224,9 @@ pantalla queda negra, el problema es backlight o PMU, no el USB.
 LVGL mantiene la pantalla, y el boton, la consola y WiFi siguen corriendo en las suyas.
 
 Para probar WiFi: pulsa BOOT, abre la card **WiFi** y espera la lista de SSID con su RSSI.
-Toca una red con clave y aparece el QR. En el celular, escanea, unete al AP `ws183-XXXX`,
-pone la contrasena y volve a la placa. Otro click de BOOT, o **Cerrar**, vuelve al inicio.
+Toca una red con clave y aparece el QR. Escanea para unirte al AP; cuando la
+placa detecta el celular, el QR cambia: escanealo de nuevo para abrir el
+formulario, pone la clave y volve a la placa. BOOT o **Cerrar** vuelve al inicio.
 
 Dos warnings del boot log son cosmeticos y esperados:
 

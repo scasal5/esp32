@@ -11,6 +11,8 @@
 
 static const char *TAG = "wifi_ui";
 
+#define PORTAL_URL "http://192.168.4.1/"
+
 static lv_obj_t *s_screen;
 static lv_obj_t *s_status;
 static lv_obj_t *s_list;
@@ -56,8 +58,21 @@ static void show_qr_for_pick(void)
         lv_qrcode_set_data(s_qr, svc_wifi_prov_qr());
     }
     if (s_hint != NULL) {
-        lv_label_set_text(s_hint, "el celular pide la clave");
+        lv_label_set_text(s_hint, "escanea para unirte");
     }
+}
+
+static void show_portal_qr(void)
+{
+    if (!s_qr_mode || s_qr == NULL) {
+        return;
+    }
+    lv_qrcode_set_data(s_qr, PORTAL_URL);
+    lv_label_set_text(s_status, "escanea otra vez");
+    if (s_hint != NULL) {
+        lv_label_set_text(s_hint, "abre la clave");
+    }
+    ESP_LOGI(TAG, "QR portal %s", PORTAL_URL);
 }
 
 static void apply_pick(void)
@@ -144,10 +159,7 @@ static void wifi_scan_tick(lv_timer_t *timer)
     }
     if (s_prov_client) {
         s_prov_client = false;
-        lv_label_set_text(s_status, "celular unido");
-        if (s_hint != NULL) {
-            lv_label_set_text(s_hint, "mira el celular");
-        }
+        show_portal_qr();
         return;
     }
     if (!s_scan_done) {
