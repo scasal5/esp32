@@ -8,8 +8,10 @@
 #include <stdlib.h>
 #include <time.h>
 
+#include "app_ajustes.h"
 #include "board_rtc.h"
 #include "boot_splash.h"
+#include "fondo_ui.h"
 #include "menu_button.h"
 #include "pm.h"
 #include "shell.h"
@@ -24,19 +26,9 @@ static const char *TAG = "ws183";
  * Tarjetas que todavia no son una app. Sin open() el shell no las abre: quedan
  * en el lanzador avisando que vienen. Cada una es una fase de la hoja de ruta.
  */
-#if CONFIG_WS183_APP_FONDO
-static const os_app_t app_fondo = {
-    .id = "fondo", .icon = LV_SYMBOL_IMAGE, .name = "Fondo",
-};
-#endif
 #if CONFIG_WS183_APP_ASPECTO
 static const os_app_t app_aspecto = {
     .id = "aspecto", .icon = LV_SYMBOL_EYE_OPEN, .name = "Aspecto",
-};
-#endif
-#if CONFIG_WS183_APP_AJUSTES
-static const os_app_t app_ajustes = {
-    .id = "ajustes", .icon = LV_SYMBOL_SETTINGS, .name = "Ajustes",
 };
 #endif
 
@@ -118,7 +110,12 @@ void app_main(void)
         err = shell_init();
         if (err == ESP_OK) {
 #if CONFIG_WS183_APP_FONDO
-            shell_register_app(&app_fondo);
+            esp_err_t fondo_err = fondo_ui_init();
+            if (fondo_err != ESP_OK) {
+                ESP_LOGW(TAG, "fondo ui: %s", esp_err_to_name(fondo_err));
+            } else {
+                shell_register_app(&app_fondo);
+            }
 #endif
 #if CONFIG_WS183_APP_ASPECTO
             shell_register_app(&app_aspecto);

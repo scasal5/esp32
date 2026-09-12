@@ -6,9 +6,9 @@ menu "ws183-os"
         bool "App Fondo"
         default y
         help
-            Tarjeta "Fondo" en el lanzador: elegir la imagen de inicio,
-            encuadrarla y dibujar encima (fase 3). Todavia no abre nada; la
-            tarjeta solo avisa que viene.
+            Tarjeta "Fondo": con WiFi muestra un QR a la IP de la placa para
+            subir png/jpg/gif. El celular se acepta por MAC, igual que el
+            portal de clave. Sin WiFi avisa que hace falta conexion.
 
     config WS183_APP_ASPECTO
         bool "App Aspecto"

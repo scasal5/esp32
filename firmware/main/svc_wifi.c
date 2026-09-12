@@ -49,6 +49,7 @@ static bool s_prov_pending;
 static uint8_t s_prov_mac[6];
 static uint8_t s_prov_aid;
 static char s_sta_ssid[33];
+static char s_sta_ip[16];
 static char s_saved_ssid[33];
 static char s_saved_pass[65];
 static char s_ap_ssid[16];
@@ -197,6 +198,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         if (take_lock()) {
             s_connected = false;
             s_sta_ssid[0] = '\0';
+            s_sta_ip[0] = '\0';
             if (s_connecting && reason != WIFI_REASON_ASSOC_LEAVE) {
                 s_connecting = false;
                 s_link_fail = true;
@@ -216,6 +218,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
             s_sta_up = false;
             s_connected = false;
             s_sta_ssid[0] = '\0';
+            s_sta_ip[0] = '\0';
             xSemaphoreGive(s_lock);
         }
         return;
@@ -368,6 +371,9 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
             s_connected = true;
             s_connecting = false;
             s_link_fail = false;
+            if (got != NULL) {
+                snprintf(s_sta_ip, sizeof(s_sta_ip), IPSTR, IP2STR(&got->ip_info.ip));
+            }
             xSemaphoreGive(s_lock);
         }
         if (got != NULL) {
@@ -576,6 +582,24 @@ svc_wifi_link_t svc_wifi_link(void)
 const char *svc_wifi_sta_ssid(void)
 {
     return s_sta_ssid;
+}
+
+bool svc_wifi_ip(char *out, size_t n)
+{
+    if (out == NULL || n == 0) {
+        return false;
+    }
+    out[0] = '\0';
+    if (!take_lock()) {
+        return false;
+    }
+    const bool have = s_sta_ip[0] != '\0';
+    if (have) {
+        strncpy(out, s_sta_ip, n - 1);
+        out[n - 1] = '\0';
+    }
+    xSemaphoreGive(s_lock);
+    return have;
 }
 
 void svc_wifi_disconnect(void)

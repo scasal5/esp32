@@ -47,6 +47,9 @@ size_t svc_wifi_copy_results(svc_wifi_ap_t *out, size_t max);
 bool svc_wifi_connected(void);
 const char *svc_wifi_sta_ssid(void);
 
+/* IP de la STA como texto. false y `out` vacio si todavia no hay. */
+bool svc_wifi_ip(char *out, size_t n);
+
 typedef enum {
     SVC_WIFI_LINK_IDLE = 0,
     SVC_WIFI_LINK_CONNECTING,

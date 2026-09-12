@@ -296,7 +296,12 @@ Planeada. Cuando se implemente:
 ### Guardado seguro
 
 Aplica cuando la placa escribe `splash.gif`: subida desde el celular (fase 5) o
-copia desde la microSD. En SPIFFS, `rename()` **falla si el destino ya existe**
+copia desde la microSD. La app Fondo, con STA en IP, muestra un QR a
+`http://<IP>/`. El primer HTTP pide Si/No con la MAC (un cliente; 30 s). Recien
+con Si el celular ve el input de png/jpg/gif; el JS lo deja en 240x284 y manda
+un GIF. El httpd vive solo mientras Fondo esta abierta.
+
+En SPIFFS, `rename()` **falla si el destino ya existe**
 (`SPIFFS_ERR_CONFLICTING_NAME` en `SPIFFS_rename`), asi que el truco de escribir un
 temporal y renombrarlo encima no alcanza:
 
