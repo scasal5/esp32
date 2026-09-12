@@ -48,6 +48,18 @@
 /* Todo lo demas. */
 #define UI_FONT_BODY       &lv_font_montserrat_14
 
+/* --- Movimiento -------------------------------------------------------- */
+
+/*
+ * Una sola duracion y una sola curva para todas las transiciones. Las anima el
+ * shell; ninguna app llama a lv_anim por su cuenta. Si manana se siente lento,
+ * se cambia un numero y cambia todo el sistema.
+ */
+#define UI_MOTION_MS       180
+#define UI_MOTION_PATH     lv_anim_path_ease_in_out
+#define UI_FADE_FROM       LV_OPA_0
+#define UI_FADE_TO         LV_OPA_COVER
+
 /* --- Ritmo ------------------------------------------------------------- */
 
 /* Margen lateral unico. La pantalla mide 240 px: mas que esto come contenido. */

@@ -133,3 +133,8 @@ bool app_menu_visible(void)
 {
     return s_menu != NULL;
 }
+
+lv_obj_t *app_menu_obj(void)
+{
+    return s_menu;
+}
