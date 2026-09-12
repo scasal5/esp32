@@ -1,4 +1,5 @@
 #include "wifi_portal.h"
+#include "svc_wifi.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -17,7 +18,8 @@
 static const char *TAG = "wifi_portal";
 
 #define DNS_PORT 53
-#define PORTAL_URI "http://192.168.4.1"
+#define PORTAL_URI     "http://192.168.4.1/"
+#define PORTAL_API_URI "http://192.168.4.1/captive-portal"
 
 static httpd_handle_t s_httpd;
 static TaskHandle_t s_dns_task;
@@ -107,45 +109,151 @@ static void html_escape(const char *in, char *out, size_t n)
     out[j] = '\0';
 }
 
-static esp_err_t send_redirect(httpd_req_t *req)
+static void build_ssid_options(char *out, size_t n)
 {
-    httpd_resp_set_status(req, "302 Temporary Redirect");
-    httpd_resp_set_hdr(req, "Location", "/");
-    return httpd_resp_send(req, "Redirect", HTTPD_RESP_USE_STRLEN);
+    out[0] = '\0';
+    svc_wifi_ap_t list[SVC_WIFI_MAX_RESULTS];
+    size_t count = svc_wifi_copy_results(list, SVC_WIFI_MAX_RESULTS);
+    bool have_target = false;
+    size_t used = 0;
+
+    for (size_t i = 0; i < count; i++) {
+        if (list[i].open) {
+            continue;
+        }
+        char esc[80];
+        html_escape(list[i].ssid, esc, sizeof(esc));
+        const char *sel = "";
+        if (strcmp(list[i].ssid, s_target) == 0) {
+            sel = " selected";
+            have_target = true;
+        }
+        int w = snprintf(out + used, n - used,
+                         "<option value=\"%s\"%s>%s</option>", esc, sel, esc);
+        if (w < 0 || (size_t)w >= n - used) {
+            break;
+        }
+        used += (size_t)w;
+    }
+
+    if (!have_target && s_target[0] != '\0' && used + 80 < n) {
+        char esc[80];
+        html_escape(s_target, esc, sizeof(esc));
+        snprintf(out + used, n - used,
+                 "<option value=\"%s\" selected>%s</option>", esc, esc);
+    }
 }
 
-static esp_err_t root_get(httpd_req_t *req)
+static esp_err_t send_wait_plate(httpd_req_t *req)
 {
-    char esc[96];
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_sendstr(req,
+        "<!DOCTYPE html><html><head>"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"2\">"
+        "<title>ws183-os</title>"
+        "<style>body{font-family:sans-serif;background:#101418;color:#F2F4F8;"
+        "margin:24px}</style></head><body>"
+        "<h2>ws183-os</h2>"
+        "<p>Esperando que acepten este celular en la placa.</p>"
+        "</body></html>");
+}
+
+static esp_err_t send_form(httpd_req_t *req)
+{
+    if (!svc_wifi_prov_allowed()) {
+        return send_wait_plate(req);
+    }
+
+    char opts[1200];
+    char esc[80];
+    build_ssid_options(opts, sizeof(opts));
     html_escape(s_target, esc, sizeof(esc));
 
-    char page[768];
+    static char page[3600];
     snprintf(page, sizeof(page),
              "<!DOCTYPE html><html><head>"
              "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
              "<meta charset=\"utf-8\"><title>ws183-os</title>"
              "<style>"
-             "body{font-family:sans-serif;background:#101418;color:#F2F4F8;"
-             "margin:24px}"
-             "input,button{width:100%%;box-sizing:border-box;padding:14px;"
+             "body{font-family:sans-serif;background:#101418;color:#F2F4F8;margin:24px}"
+             "select,input,button{width:100%%;box-sizing:border-box;padding:14px;"
              "margin:10px 0;font-size:18px;border-radius:10px;border:0}"
              "button{background:#3B82F6;color:#fff}"
+             ".net{font-size:22px;font-weight:700;margin:12px 0}"
+             ".spin{width:36px;height:36px;border:4px solid #3B82F6;"
+             "border-top-color:transparent;border-radius:50%%;"
+             "animation:s 0.8s linear infinite;margin:24px auto}"
+             "@keyframes s{to{transform:rotate(360deg)}}"
+             ".hide{display:none}"
              "</style></head><body>"
-             "<h2>ws183-os</h2><p>Red: %s</p>"
-             "<form method=\"POST\" action=\"/connect\">"
+             "<h2>Conectar la placa</h2>"
+             "<p class=\"net\">Red: %s</p>"
+             "<div id=\"box\">"
+             "<p>Escribi la clave de esa red. Esto no cambia el WiFi del celular.</p>"
+             "<form id=\"f\">"
+             "<select name=\"ssid\">%s</select>"
              "<input type=\"password\" name=\"pass\" placeholder=\"contrasena\" "
-             "autofocus>"
-             "<button type=\"submit\">Conectar</button></form>"
+             "autofocus required>"
+             "<button type=\"submit\">Conectar la placa</button></form>"
+             "</div>"
+             "<div id=\"wait\" class=\"hide\">"
+             "<p>Conectando a la red...</p><div class=\"spin\"></div>"
+             "</div>"
+             "<div id=\"ok\" class=\"hide\"><p>Listo. La placa ya esta en esa red.</p></div>"
+             "<div id=\"fail\" class=\"hide\">"
+             "<p>No se pudo conectar.</p>"
+             "<button type=\"button\" id=\"retry\">Reintentar</button>"
+             "</div>"
+             "<script>"
+             "const $=id=>document.getElementById(id);"
+             "function show(id){['box','wait','ok','fail'].forEach(x=>$(x).classList.add('hide'));"
+             "$(id).classList.remove('hide');}"
+             "$('retry').onclick=()=>show('box');"
+             "$('f').onsubmit=async e=>{"
+             "e.preventDefault();"
+             "show('wait');"
+             "const b=new URLSearchParams(new FormData($('f')));"
+             "await fetch('/connect',{method:'POST',body:b});"
+             "(function poll(){"
+             "fetch('/status').then(r=>r.json()).then(j=>{"
+             "if(j.state==='up'){show('ok');return;}"
+             "if(j.state==='fail'){show('fail');return;}"
+             "setTimeout(poll,400);}"
+             ").catch(()=>setTimeout(poll,800));"
+             "})();"
+             "};"
+             "</script>"
              "</body></html>",
-             esc);
+             esc, opts);
 
     httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     return httpd_resp_send(req, page, HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t send_captive_api(httpd_req_t *req)
+{
+    /* RFC 8908: el celular abre user-portal-url solo, sin que el usuario
+       tenga que escribir 192.168.4.1. */
+    httpd_resp_set_type(req, "application/captive+json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    return httpd_resp_sendstr(req,
+        "{\"captive\":true,"
+        "\"user-portal-url\":\"http://192.168.4.1/\"}");
 }
 
 static esp_err_t connect_post(httpd_req_t *req)
 {
-    char body[192];
+    if (!svc_wifi_prov_allowed()) {
+        httpd_resp_set_status(req, "403 Forbidden");
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_sendstr(req, "{\"ok\":false}");
+    }
+
+    char body[256];
     int len = httpd_req_recv(req, body, sizeof(body) - 1);
     if (len <= 0) {
         httpd_resp_set_status(req, "400 Bad Request");
@@ -153,33 +261,83 @@ static esp_err_t connect_post(httpd_req_t *req)
     }
     body[len] = '\0';
 
+    char body_ssid[256];
+    char body_pass[256];
+    memcpy(body_ssid, body, (size_t)len + 1);
+    memcpy(body_pass, body, (size_t)len + 1);
+
+    char ssid[33] = { 0 };
     char pass[65] = { 0 };
-    form_get(body, "pass", pass, sizeof(pass));
-
-    ESP_LOGI(TAG, "portal submit ssid=%s pass_len=%u", s_target,
-             (unsigned)strlen(pass));
-
-    if (s_on_pass != NULL && s_target[0] != '\0') {
-        s_on_pass(s_target, pass);
+    form_get(body_ssid, "ssid", ssid, sizeof(ssid));
+    form_get(body_pass, "pass", pass, sizeof(pass));
+    if (ssid[0] == '\0') {
+        strncpy(ssid, s_target, sizeof(ssid) - 1);
     }
 
-    httpd_resp_set_type(req, "text/html");
-    return httpd_resp_send(req,
-                           "<!DOCTYPE html><html><body>"
-                           "<p>Conectando. Podes volver a la placa.</p>"
-                           "</body></html>",
-                           HTTPD_RESP_USE_STRLEN);
+    ESP_LOGI(TAG, "portal submit ssid=%s pass_len=%u", ssid,
+             (unsigned)strlen(pass));
+
+    if (s_on_pass != NULL && ssid[0] != '\0' && pass[0] != '\0') {
+        strncpy(s_target, ssid, sizeof(s_target) - 1);
+        s_on_pass(ssid, pass);
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_sendstr(req, "{\"ok\":true}");
 }
 
-static esp_err_t captive_get(httpd_req_t *req)
+static esp_err_t status_get(httpd_req_t *req)
 {
-    return send_redirect(req);
+    const char *state = "idle";
+    switch (svc_wifi_link()) {
+    case SVC_WIFI_LINK_CONNECTING:
+        state = "connecting";
+        break;
+    case SVC_WIFI_LINK_UP:
+        state = "up";
+        break;
+    case SVC_WIFI_LINK_FAIL:
+        state = "fail";
+        break;
+    default:
+        break;
+    }
+
+    char json[96];
+    snprintf(json, sizeof(json), "{\"state\":\"%s\",\"ssid\":\"%s\"}",
+             state, svc_wifi_sta_ssid());
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_sendstr(req, json);
 }
 
 static esp_err_t http_404(httpd_req_t *req, httpd_err_code_t err)
 {
     (void)err;
-    return send_redirect(req);
+    return send_form(req);
+}
+
+/* Fin del question (header + labels + type/class). Ignora EDNS extra. */
+static int dns_question_end(const uint8_t *req, int n)
+{
+    int i = 12;
+    if (n < 16) {
+        return -1;
+    }
+    while (i < n) {
+        uint8_t lab = req[i];
+        if (lab == 0) {
+            i += 5;
+            return (i <= n) ? i : -1;
+        }
+        if ((lab & 0xC0) == 0xC0) {
+            i += 6;
+            return (i <= n) ? i : -1;
+        }
+        i += 1 + (int)lab;
+    }
+    return -1;
 }
 
 static void dns_task(void *arg)
@@ -217,32 +375,35 @@ static void dns_task(void *arg)
         struct sockaddr_in src;
         socklen_t slen = sizeof(src);
         int n = recvfrom(sock, req, sizeof(req), 0, (struct sockaddr *)&src, &slen);
-        if (n < (int)sizeof(uint16_t) * 6) {
+        int qend = dns_question_end(req, n);
+        if (qend < 0 || qend > (int)sizeof(req) - 16) {
             continue;
         }
 
-        /* Copia la consulta y responde A 192.168.4.1 con puntero al nombre. */
         uint8_t reply[512];
-        if (n > (int)sizeof(reply) - 16) {
-            continue;
-        }
-        memcpy(reply, req, (size_t)n);
-        reply[2] |= 0x80; /* QR */
-        reply[3] = 0x80;  /* RA */
+        memcpy(reply, req, (size_t)qend);
+        reply[2] |= 0x80;
+        reply[3] = 0x80;
+        reply[4] = 0;
+        reply[5] = 1;
         reply[6] = 0;
-        reply[7] = 1; /* an_count = 1 */
+        reply[7] = 1;
+        reply[8] = 0;
+        reply[9] = 0;
+        reply[10] = 0;
+        reply[11] = 0;
 
-        int i = n;
+        int i = qend;
         reply[i++] = 0xC0;
         reply[i++] = 0x0C;
         reply[i++] = 0x00;
-        reply[i++] = 0x01; /* A */
+        reply[i++] = 0x01;
         reply[i++] = 0x00;
-        reply[i++] = 0x01; /* IN */
+        reply[i++] = 0x01;
         reply[i++] = 0x00;
         reply[i++] = 0x00;
         reply[i++] = 0x00;
-        reply[i++] = 30; /* TTL */
+        reply[i++] = 30;
         reply[i++] = 0x00;
         reply[i++] = 0x04;
         reply[i++] = 192;
@@ -265,7 +426,8 @@ static void set_dhcp_captive(void)
     if (ap == NULL) {
         return;
     }
-    static char uri[] = PORTAL_URI;
+    /* RFC 8910: option 114 apunta a la API JSON, no a la pagina HTML. */
+    static char uri[] = PORTAL_API_URI;
     esp_netif_dhcps_stop(ap);
     esp_err_t err = esp_netif_dhcps_option(ap, ESP_NETIF_OP_SET,
                                            ESP_NETIF_CAPTIVEPORTAL_URI,
@@ -297,27 +459,53 @@ esp_err_t wifi_portal_start(const char *target_ssid, wifi_portal_on_pass_t cb)
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.lru_purge_enable = true;
     cfg.max_open_sockets = 7;
+    cfg.max_uri_handlers = 16;
     esp_err_t err = httpd_start(&s_httpd, &cfg);
     if (err != ESP_OK) {
         return err;
     }
 
-    const httpd_uri_t root = {
-        .uri = "/", .method = HTTP_GET, .handler = root_get
+    static const httpd_uri_t uri_root = {
+        .uri = "/", .method = HTTP_GET, .handler = send_form
     };
-    const httpd_uri_t connect = {
+    static const httpd_uri_t uri_connect = {
         .uri = "/connect", .method = HTTP_POST, .handler = connect_post
     };
-    const httpd_uri_t gen204 = {
-        .uri = "/generate_204", .method = HTTP_GET, .handler = captive_get
+    static const httpd_uri_t uri_status = {
+        .uri = "/status", .method = HTTP_GET, .handler = status_get
     };
-    const httpd_uri_t hotspot = {
-        .uri = "/hotspot-detect.html", .method = HTTP_GET, .handler = captive_get
+    static const httpd_uri_t uri_g204 = {
+        .uri = "/generate_204", .method = HTTP_GET, .handler = send_form
     };
-    httpd_register_uri_handler(s_httpd, &root);
-    httpd_register_uri_handler(s_httpd, &connect);
-    httpd_register_uri_handler(s_httpd, &gen204);
-    httpd_register_uri_handler(s_httpd, &hotspot);
+    static const httpd_uri_t uri_g204b = {
+        .uri = "/gen_204", .method = HTTP_GET, .handler = send_form
+    };
+    static const httpd_uri_t uri_hotspot = {
+        .uri = "/hotspot-detect.html", .method = HTTP_GET, .handler = send_form
+    };
+    static const httpd_uri_t uri_success = {
+        .uri = "/library/test/success.html", .method = HTTP_GET, .handler = send_form
+    };
+    static const httpd_uri_t uri_ncsi = {
+        .uri = "/connecttest.txt", .method = HTTP_GET, .handler = send_form
+    };
+    static const httpd_uri_t uri_api = {
+        .uri = "/captive-portal", .method = HTTP_GET, .handler = send_captive_api
+    };
+    static const httpd_uri_t uri_wellknown = {
+        .uri = "/.well-known/captive-portal", .method = HTTP_GET,
+        .handler = send_captive_api
+    };
+    httpd_register_uri_handler(s_httpd, &uri_root);
+    httpd_register_uri_handler(s_httpd, &uri_connect);
+    httpd_register_uri_handler(s_httpd, &uri_status);
+    httpd_register_uri_handler(s_httpd, &uri_g204);
+    httpd_register_uri_handler(s_httpd, &uri_g204b);
+    httpd_register_uri_handler(s_httpd, &uri_hotspot);
+    httpd_register_uri_handler(s_httpd, &uri_success);
+    httpd_register_uri_handler(s_httpd, &uri_ncsi);
+    httpd_register_uri_handler(s_httpd, &uri_api);
+    httpd_register_uri_handler(s_httpd, &uri_wellknown);
     httpd_register_err_handler(s_httpd, HTTPD_404_NOT_FOUND, http_404);
 
     s_dns_run = true;

@@ -3,13 +3,17 @@
 #include "app_menu.h"
 #include "svc_wifi.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "esp_log.h"
+#include "esp_mac.h"
 
 #include "lvgl.h"
 
 static const char *TAG = "wifi_ui";
+
+#define PORTAL_URL "http://192.168.4.1/"
 
 static lv_obj_t *s_screen;
 static lv_obj_t *s_status;
@@ -17,15 +21,24 @@ static lv_obj_t *s_list;
 static lv_obj_t *s_qr_box;
 static lv_obj_t *s_qr;
 static lv_obj_t *s_hint;
+static lv_obj_t *s_ask;
+static lv_obj_t *s_ask_id;
 static lv_timer_t *s_timer;
 static bool s_open;
 static bool s_qr_mode;
+static bool s_asking;
+static uint32_t s_ask_ticks;
 static volatile bool s_scan_done;
 static volatile bool s_connected;
 static volatile bool s_connect_fail;
+static volatile bool s_prov_client;
+static volatile bool s_prov_gone;
+static svc_wifi_prov_client_t s_client;
 static svc_wifi_ap_t s_shown[SVC_WIFI_MAX_RESULTS];
 static char s_pick_ssid[33];
 static bool s_pick_open;
+
+#define ASK_TIMEOUT_TICKS 300  /* 30 s a 100 ms */
 
 static void show_list_widgets(bool list_on)
 {
@@ -55,8 +68,90 @@ static void show_qr_for_pick(void)
         lv_qrcode_set_data(s_qr, svc_wifi_prov_qr());
     }
     if (s_hint != NULL) {
-        lv_label_set_text_fmt(s_hint, "escanea  %s", svc_wifi_prov_ap_ssid());
+        lv_label_set_text(s_hint, "escanea para unirte");
     }
+}
+
+static void show_portal_qr(void)
+{
+    if (!s_qr_mode || s_qr == NULL) {
+        return;
+    }
+    if (s_ask != NULL) {
+        lv_obj_add_flag(s_ask, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_qr_box != NULL) {
+        lv_obj_remove_flag(s_qr_box, LV_OBJ_FLAG_HIDDEN);
+    }
+    lv_qrcode_set_data(s_qr, PORTAL_URL);
+    lv_label_set_text(s_status, "escanea otra vez");
+    if (s_hint != NULL) {
+        lv_label_set_text(s_hint, "abre la clave");
+    }
+    ESP_LOGI(TAG, "QR portal %s", PORTAL_URL);
+}
+
+static void show_ask(void)
+{
+    s_asking = true;
+    s_ask_ticks = 0;
+    if (s_qr_box != NULL) {
+        lv_obj_add_flag(s_qr_box, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_ask != NULL) {
+        char id[24];
+        snprintf(id, sizeof(id), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 s_client.mac[0], s_client.mac[1], s_client.mac[2],
+                 s_client.mac[3], s_client.mac[4], s_client.mac[5]);
+        if (s_ask_id != NULL) {
+            lv_label_set_text(s_ask_id, id);
+        }
+        lv_obj_remove_flag(s_ask, LV_OBJ_FLAG_HIDDEN);
+    }
+    lv_label_set_text_fmt(s_status, "permitir este celular? %us",
+                         (unsigned)(ASK_TIMEOUT_TICKS / 10));
+    ESP_LOGI(TAG, "ask " MACSTR, MAC2STR(s_client.mac));
+}
+
+static void hide_ask(void)
+{
+    s_asking = false;
+    if (s_ask != NULL) {
+        lv_obj_add_flag(s_ask, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void deny_now(void)
+{
+    hide_ask();
+    svc_wifi_prov_deny();
+    show_qr_for_pick();
+}
+
+static void allow_cb(void *arg)
+{
+    LV_UNUSED(arg);
+    hide_ask();
+    svc_wifi_prov_allow();
+    show_portal_qr();
+}
+
+static void deny_cb(void *arg)
+{
+    LV_UNUSED(arg);
+    deny_now();
+}
+
+static void allow_clicked(lv_event_t *event)
+{
+    LV_UNUSED(event);
+    lv_async_call(allow_cb, NULL);
+}
+
+static void deny_clicked(lv_event_t *event)
+{
+    LV_UNUSED(event);
+    lv_async_call(deny_cb, NULL);
 }
 
 static void apply_pick(void)
@@ -64,12 +159,7 @@ static void apply_pick(void)
     if (s_pick_open) {
         s_qr_mode = false;
         show_list_widgets(true);
-        lv_label_set_text(s_status, "conectando...");
-        esp_err_t err = svc_wifi_connect(s_pick_ssid, "");
-        if (err != ESP_OK) {
-            lv_label_set_text(s_status, "WiFi no listo");
-            ESP_LOGW(TAG, "connect: %s", esp_err_to_name(err));
-        }
+        lv_label_set_text(s_status, "solo redes privadas");
         return;
     }
 
@@ -137,13 +227,38 @@ static void wifi_scan_tick(lv_timer_t *timer)
     if (s_connected) {
         s_connected = false;
         lv_label_set_text(s_status, "conectado");
-        lv_timer_t *t = lv_timer_create(close_later, 1200, NULL);
+        lv_timer_t *t = lv_timer_create(close_later, 10000, NULL);
         lv_timer_set_repeat_count(t, 1);
         return;
     }
     if (s_connect_fail) {
         s_connect_fail = false;
         lv_label_set_text(s_status, "no se pudo conectar");
+        return;
+    }
+    if (s_prov_gone) {
+        s_prov_gone = false;
+        if (s_asking) {
+            hide_ask();
+            show_qr_for_pick();
+        }
+        return;
+    }
+    if (s_prov_client) {
+        s_prov_client = false;
+        show_ask();
+        return;
+    }
+    if (s_asking) {
+        s_ask_ticks++;
+        if (s_ask_ticks >= ASK_TIMEOUT_TICKS) {
+            deny_now();
+            return;
+        }
+        if ((s_ask_ticks % 10) == 0) {
+            unsigned left = (ASK_TIMEOUT_TICKS - s_ask_ticks) / 10;
+            lv_label_set_text_fmt(s_status, "permitir este celular? %us", left);
+        }
         return;
     }
     if (!s_scan_done) {
@@ -212,6 +327,42 @@ static void create_screen(void)
     lv_obj_set_style_text_color(s_hint, lv_color_hex(0x8A93A6), 0);
     lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, 0);
 
+    s_ask = lv_obj_create(s_screen);
+    lv_obj_remove_style_all(s_ask);
+    lv_obj_set_size(s_ask, LV_PCT(100), 180);
+    lv_obj_align(s_ask, LV_ALIGN_CENTER, 0, 4);
+    lv_obj_remove_flag(s_ask, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_ask, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t *ask_title = lv_label_create(s_ask);
+    lv_label_set_text(ask_title, "dispositivo");
+    lv_obj_set_style_text_color(ask_title, lv_color_hex(0x8A93A6), 0);
+    lv_obj_align(ask_title, LV_ALIGN_TOP_MID, 0, 8);
+
+    s_ask_id = lv_label_create(s_ask);
+    lv_label_set_text(s_ask_id, "--");
+    lv_obj_set_width(s_ask_id, LV_PCT(100));
+    lv_obj_set_style_text_align(s_ask_id, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(s_ask_id, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(s_ask_id, lv_color_hex(0xF2F4F8), 0);
+    lv_obj_align(s_ask_id, LV_ALIGN_TOP_MID, 0, 32);
+
+    lv_obj_t *yes = lv_button_create(s_ask);
+    lv_obj_set_size(yes, 100, 40);
+    lv_obj_align(yes, LV_ALIGN_BOTTOM_MID, -58, 0);
+    lv_obj_add_event_cb(yes, allow_clicked, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *yes_l = lv_label_create(yes);
+    lv_label_set_text(yes_l, "Si");
+    lv_obj_center(yes_l);
+
+    lv_obj_t *no = lv_button_create(s_ask);
+    lv_obj_set_size(no, 100, 40);
+    lv_obj_align(no, LV_ALIGN_BOTTOM_MID, 58, 0);
+    lv_obj_add_event_cb(no, deny_clicked, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *no_l = lv_label_create(no);
+    lv_label_set_text(no_l, "No");
+    lv_obj_center(no_l);
+
     lv_obj_t *close = lv_button_create(s_screen);
     lv_obj_set_size(close, 92, 36);
     lv_obj_align(close, LV_ALIGN_BOTTOM_MID, 0, -12);
@@ -236,6 +387,11 @@ static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id,
         s_connected = true;
     } else if (id == SVC_WIFI_EVENT_CONNECT_FAIL) {
         s_connect_fail = true;
+    } else if (id == SVC_WIFI_EVENT_PROV_CLIENT && data != NULL) {
+        memcpy(&s_client, data, sizeof(s_client));
+        s_prov_client = true;
+    } else if (id == SVC_WIFI_EVENT_PROV_GONE) {
+        s_prov_gone = true;
     }
 }
 
@@ -255,6 +411,9 @@ void wifi_scan_ui_open(void)
     s_scan_done = false;
     s_connected = false;
     s_connect_fail = false;
+    s_prov_client = false;
+    s_prov_gone = false;
+    s_asking = false;
     s_qr_mode = false;
     s_open = true;
     create_screen();
@@ -285,6 +444,9 @@ void wifi_scan_ui_close(void)
     s_qr_box = NULL;
     s_qr = NULL;
     s_hint = NULL;
+    s_ask = NULL;
+    s_ask_id = NULL;
+    s_asking = false;
     s_qr_mode = false;
     s_open = false;
 }
