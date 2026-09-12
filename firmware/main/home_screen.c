@@ -1,6 +1,7 @@
 #include "home_screen.h"
 #include "pm.h"
 #include "svc_wifi.h"
+#include "ui_theme.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -96,44 +97,49 @@ void home_screen_show(lv_draw_buf_t *bg)
         lv_obj_center(img);
     }
 
+    /* La hora manda: ocupa su propia linea en la escala grande, y debajo va una
+       fila de etiquetas chicas con el resto del estado. Las que no aplican se
+       ocultan, y el flex cierra el hueco. */
     lv_obj_t *bar = lv_obj_create(scr);
     lv_obj_remove_style_all(bar);
-    lv_obj_set_size(bar, LV_PCT(100), 56);
+    lv_obj_set_size(bar, LV_PCT(100), 84);
     lv_obj_align(bar, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_pad_left(bar, 10, 0);
-    lv_obj_set_style_pad_right(bar, 10, 0);
+    lv_obj_set_style_pad_left(bar, UI_PAD_SIDE, 0);
+    lv_obj_set_style_pad_right(bar, UI_PAD_SIDE, 0);
     lv_obj_set_style_pad_top(bar, 8, 0);
+    lv_obj_set_style_pad_row(bar, 2, 0);
     lv_obj_remove_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END,
-                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_START);
+
+    s_clock = lv_label_create(bar);
+    lv_obj_set_style_text_color(s_clock, UI_COL_TEXT, 0);
+    lv_obj_set_style_text_font(s_clock, UI_FONT_DISPLAY, 0);
 
     lv_obj_t *row = lv_obj_create(bar);
     lv_obj_remove_style_all(row);
     lv_obj_set_width(row, LV_PCT(100));
     lv_obj_set_height(row, LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_column(row, 12, 0);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER,
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
     lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
-    s_clock = lv_label_create(row);
-    lv_obj_set_style_text_color(s_clock, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_style_text_font(s_clock, &lv_font_montserrat_20, 0);
+    s_battery = lv_label_create(row);
+    lv_obj_set_style_text_color(s_battery, UI_COL_TEXT_2, 0);
+    lv_obj_set_style_text_font(s_battery, UI_FONT_BODY, 0);
 
     s_wifi = lv_label_create(row);
     lv_label_set_text(s_wifi, "WiFi");
-    lv_obj_set_style_text_color(s_wifi, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_style_text_font(s_wifi, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(s_wifi, UI_COL_TEXT_2, 0);
+    lv_obj_set_style_text_font(s_wifi, UI_FONT_BODY, 0);
 
-    s_battery = lv_label_create(row);
-    lv_obj_set_style_text_color(s_battery, lv_color_hex(0xD8DEE9), 0);
-    lv_obj_set_style_text_font(s_battery, &lv_font_montserrat_20, 0);
-
-    s_usb = lv_label_create(bar);
+    s_usb = lv_label_create(row);
     lv_label_set_text(s_usb, "USB");
-    lv_obj_set_style_text_color(s_usb, lv_color_hex(0xD8DEE9), 0);
-    lv_obj_set_style_text_font(s_usb, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(s_usb, UI_COL_TEXT_MUTED, 0);
+    lv_obj_set_style_text_font(s_usb, UI_FONT_BODY, 0);
 
     s_wifi_shown = true;
     s_usb_shown = true;

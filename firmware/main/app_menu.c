@@ -1,5 +1,6 @@
 #include "app_menu.h"
 #include "menu_button.h"
+#include "ui_theme.h"
 #include "wifi_scan_ui.h"
 
 #include "esp_log.h"
@@ -56,9 +57,9 @@ static lv_obj_t *create_card(lv_obj_t *parent, const menu_app_t *app)
     lv_obj_t *card = lv_obj_create(parent);
     lv_obj_remove_style_all(card);
     lv_obj_set_size(card, CARD_W, CARD_H);
-    lv_obj_set_style_bg_color(card, lv_color_hex(0x1E2530), 0);
+    lv_obj_set_style_bg_color(card, UI_COL_SURFACE, 0);
     lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(card, 18, 0);
+    lv_obj_set_style_radius(card, UI_RADIUS, 0);
     lv_obj_remove_flag(card, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -66,13 +67,13 @@ static lv_obj_t *create_card(lv_obj_t *parent, const menu_app_t *app)
 
     lv_obj_t *icon = lv_label_create(card);
     lv_label_set_text(icon, app->icon);
-    lv_obj_set_style_text_font(icon, &lv_font_montserrat_36, 0);
-    lv_obj_set_style_text_color(icon, lv_color_hex(0xF2F4F8), 0);
+    lv_obj_set_style_text_font(icon, UI_FONT_DISPLAY, 0);
+    lv_obj_set_style_text_color(icon, UI_COL_TEXT, 0);
 
     lv_obj_t *name = lv_label_create(card);
     lv_label_set_text(name, app->name);
-    lv_obj_set_style_text_font(name, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(name, lv_color_hex(0xD8DEE9), 0);
+    lv_obj_set_style_text_font(name, UI_FONT_TITLE, 0);
+    lv_obj_set_style_text_color(name, UI_COL_TEXT_2, 0);
 
     /* Las etiquetas no son clickeables: el toque llega a la tarjeta. */
     lv_obj_add_event_cb(card, card_clicked, LV_EVENT_CLICKED, (void *)app);
@@ -86,16 +87,16 @@ static void menu_open(void)
     s_menu = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(s_menu);
     lv_obj_set_size(s_menu, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(s_menu, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_bg_opa(s_menu, LV_OPA_80, 0);
+    lv_obj_set_style_bg_color(s_menu, UI_COL_BG, 0);
+    lv_obj_set_style_bg_opa(s_menu, LV_OPA_90, 0);
     /* Clickeable: los toques no pasan a la pantalla de abajo. */
     lv_obj_add_flag(s_menu, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(s_menu, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *title = lv_label_create(s_menu);
     lv_label_set_text(title, "Apps");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(title, lv_color_hex(0xF2F4F8), 0);
+    lv_obj_set_style_text_font(title, UI_FONT_TITLE, 0);
+    lv_obj_set_style_text_color(title, UI_COL_TEXT, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 24);
 
     /* Carrusel: fila con scroll horizontal, de a una tarjeta, centrada. */
@@ -122,7 +123,8 @@ static void menu_open(void)
 
     s_hint = lv_label_create(s_menu);
     lv_label_set_text(s_hint, "Desliza para ver mas. BOOT cierra");
-    lv_obj_set_style_text_color(s_hint, lv_color_hex(0x8A93A6), 0);
+    lv_obj_set_style_text_color(s_hint, UI_COL_TEXT_MUTED, 0);
+    lv_obj_set_style_text_font(s_hint, UI_FONT_BODY, 0);
     lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -20);
 }
 

@@ -2,6 +2,7 @@
 
 #include "app_menu.h"
 #include "svc_wifi.h"
+#include "ui_theme.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -210,6 +211,11 @@ static void wifi_scan_render(void)
         lv_snprintf(text, sizeof(text), "%s%s  %d dBm", lock,
                     s_shown[i].ssid, (int)s_shown[i].rssi);
         lv_obj_t *btn = lv_list_add_button(s_list, NULL, text);
+        /* Sin fondo propio: cada fila se apoya en la superficie de la lista. */
+        lv_obj_set_style_bg_opa(btn, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(btn, 0, 0);
+        lv_obj_set_style_text_color(btn, UI_COL_TEXT, 0);
+        lv_obj_set_style_text_font(btn, UI_FONT_BODY, 0);
         lv_obj_add_event_cb(btn, net_clicked, LV_EVENT_CLICKED, &s_shown[i]);
     }
 }
@@ -280,33 +286,51 @@ static void close_clicked(lv_event_t *event)
     lv_async_call(close_async_cb, NULL);
 }
 
+/*
+ * El tema por defecto de LVGL pinta los botones de azul. Aca la UI es
+ * monocroma: la accion afirmativa se invierte (claro sobre fondo) y el resto
+ * usa la superficie de las tarjetas.
+ */
+static void style_button(lv_obj_t *btn, bool primary)
+{
+    lv_obj_set_style_bg_color(btn, primary ? UI_COL_TEXT : UI_COL_SURFACE, 0);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(btn, 10, 0);
+    lv_obj_set_style_shadow_width(btn, 0, 0);
+    lv_obj_set_style_border_width(btn, 0, 0);
+    lv_obj_set_style_text_color(btn, primary ? UI_COL_BG : UI_COL_TEXT, 0);
+    lv_obj_set_style_text_font(btn, UI_FONT_BODY, 0);
+}
+
 static void create_screen(void)
 {
     s_screen = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(s_screen);
     lv_obj_set_size(s_screen, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(s_screen, lv_color_hex(0x101418), 0);
+    lv_obj_set_style_bg_color(s_screen, UI_COL_BG, 0);
     lv_obj_set_style_bg_opa(s_screen, LV_OPA_COVER, 0);
     lv_obj_add_flag(s_screen, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(s_screen, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *title = lv_label_create(s_screen);
     lv_label_set_text(title, "WiFi");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(title, lv_color_hex(0xF2F4F8), 0);
+    lv_obj_set_style_text_font(title, UI_FONT_TITLE, 0);
+    lv_obj_set_style_text_color(title, UI_COL_TEXT, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
 
     s_status = lv_label_create(s_screen);
     lv_label_set_text(s_status, "buscando...");
-    lv_obj_set_style_text_color(s_status, lv_color_hex(0x8A93A6), 0);
+    lv_obj_set_style_text_color(s_status, UI_COL_TEXT_MUTED, 0);
+    lv_obj_set_style_text_font(s_status, UI_FONT_BODY, 0);
     lv_obj_align(s_status, LV_ALIGN_TOP_MID, 0, 36);
 
     s_list = lv_list_create(s_screen);
     lv_obj_set_size(s_list, LV_PCT(100), 150);
     lv_obj_align(s_list, LV_ALIGN_CENTER, 0, 4);
-    lv_obj_set_style_bg_color(s_list, lv_color_hex(0x1E2530), 0);
+    lv_obj_set_style_bg_color(s_list, UI_COL_SURFACE, 0);
     lv_obj_set_style_bg_opa(s_list, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(s_list, 12, 0);
+    lv_obj_set_style_radius(s_list, UI_RADIUS, 0);
+    lv_obj_set_style_border_width(s_list, 0, 0);
 
     s_qr_box = lv_obj_create(s_screen);
     lv_obj_remove_style_all(s_qr_box);
@@ -317,14 +341,15 @@ static void create_screen(void)
 
     s_qr = lv_qrcode_create(s_qr_box);
     lv_qrcode_set_size(s_qr, 140);
-    lv_qrcode_set_dark_color(s_qr, lv_color_hex(0x101418));
-    lv_qrcode_set_light_color(s_qr, lv_color_hex(0xFFFFFF));
+    lv_qrcode_set_dark_color(s_qr, UI_COL_QR_DARK);
+    lv_qrcode_set_light_color(s_qr, UI_COL_QR_LIGHT);
     lv_qrcode_set_quiet_zone(s_qr, true);
     lv_obj_align(s_qr, LV_ALIGN_TOP_MID, 0, 0);
 
     s_hint = lv_label_create(s_qr_box);
     lv_label_set_text(s_hint, "");
-    lv_obj_set_style_text_color(s_hint, lv_color_hex(0x8A93A6), 0);
+    lv_obj_set_style_text_color(s_hint, UI_COL_TEXT_MUTED, 0);
+    lv_obj_set_style_text_font(s_hint, UI_FONT_BODY, 0);
     lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, 0);
 
     s_ask = lv_obj_create(s_screen);
@@ -336,21 +361,23 @@ static void create_screen(void)
 
     lv_obj_t *ask_title = lv_label_create(s_ask);
     lv_label_set_text(ask_title, "dispositivo");
-    lv_obj_set_style_text_color(ask_title, lv_color_hex(0x8A93A6), 0);
+    lv_obj_set_style_text_color(ask_title, UI_COL_TEXT_MUTED, 0);
+    lv_obj_set_style_text_font(ask_title, UI_FONT_BODY, 0);
     lv_obj_align(ask_title, LV_ALIGN_TOP_MID, 0, 8);
 
     s_ask_id = lv_label_create(s_ask);
     lv_label_set_text(s_ask_id, "--");
     lv_obj_set_width(s_ask_id, LV_PCT(100));
     lv_obj_set_style_text_align(s_ask_id, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(s_ask_id, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(s_ask_id, lv_color_hex(0xF2F4F8), 0);
+    lv_obj_set_style_text_font(s_ask_id, UI_FONT_TITLE, 0);
+    lv_obj_set_style_text_color(s_ask_id, UI_COL_TEXT, 0);
     lv_obj_align(s_ask_id, LV_ALIGN_TOP_MID, 0, 32);
 
     lv_obj_t *yes = lv_button_create(s_ask);
     lv_obj_set_size(yes, 100, 40);
     lv_obj_align(yes, LV_ALIGN_BOTTOM_MID, -58, 0);
     lv_obj_add_event_cb(yes, allow_clicked, LV_EVENT_CLICKED, NULL);
+    style_button(yes, true);
     lv_obj_t *yes_l = lv_label_create(yes);
     lv_label_set_text(yes_l, "Si");
     lv_obj_center(yes_l);
@@ -359,6 +386,7 @@ static void create_screen(void)
     lv_obj_set_size(no, 100, 40);
     lv_obj_align(no, LV_ALIGN_BOTTOM_MID, 58, 0);
     lv_obj_add_event_cb(no, deny_clicked, LV_EVENT_CLICKED, NULL);
+    style_button(no, false);
     lv_obj_t *no_l = lv_label_create(no);
     lv_label_set_text(no_l, "No");
     lv_obj_center(no_l);
@@ -367,6 +395,7 @@ static void create_screen(void)
     lv_obj_set_size(close, 92, 36);
     lv_obj_align(close, LV_ALIGN_BOTTOM_MID, 0, -12);
     lv_obj_add_event_cb(close, close_clicked, LV_EVENT_CLICKED, NULL);
+    style_button(close, false);
     lv_obj_t *close_label = lv_label_create(close);
     lv_label_set_text(close_label, "Cerrar");
     lv_obj_center(close_label);

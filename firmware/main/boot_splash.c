@@ -1,6 +1,7 @@
 #include "boot_splash.h"
 #include "pm.h"
 #include "pm_format.h"
+#include "ui_theme.h"
 
 #include "bsp/esp-bsp.h"
 #include "lvgl.h"
@@ -43,19 +44,22 @@ void boot_splash_show(void)
     }
 
     lv_obj_t *scr = lv_screen_active();
-    lv_obj_set_style_bg_color(scr, lv_color_hex(0x101418), 0);
+    lv_obj_set_style_bg_color(scr, UI_COL_BG, 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 
+    /* El nombre es lo unico que se ve al arrancar: va en la escala grande, con
+       el estado del PMU debajo como linea secundaria. */
     s_title = lv_label_create(scr);
     lv_label_set_text(s_title, "ws183-os");
-    lv_obj_set_style_text_color(s_title, lv_color_hex(0xF2F4F8), 0);
-    lv_obj_set_style_text_font(s_title, &lv_font_montserrat_20, 0);
-    lv_obj_align(s_title, LV_ALIGN_CENTER, 0, -12);
+    lv_obj_set_style_text_color(s_title, UI_COL_TEXT, 0);
+    lv_obj_set_style_text_font(s_title, UI_FONT_DISPLAY, 0);
+    lv_obj_align(s_title, LV_ALIGN_CENTER, 0, -18);
 
     s_status = lv_label_create(scr);
     lv_label_set_text(s_status, "...");
-    lv_obj_set_style_text_color(s_status, lv_color_hex(0x8A93A6), 0);
-    lv_obj_align(s_status, LV_ALIGN_CENTER, 0, 16);
+    lv_obj_set_style_text_color(s_status, UI_COL_TEXT_MUTED, 0);
+    lv_obj_set_style_text_font(s_status, UI_FONT_BODY, 0);
+    lv_obj_align(s_status, LV_ALIGN_CENTER, 0, 20);
 
     /* Primera lectura inmediata: sin esto la pantalla mostraria el placeholder
        durante los primeros BATTERY_REFRESH_MS. */

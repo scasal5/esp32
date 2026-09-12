@@ -1,9 +1,19 @@
-# Hardware verificado
+<img src="brand/head-hardware.svg" alt="Hardware verificado: relevado sobre una unidad real, cada dato indica su fuente." width="100%">
 
 Relevamiento hecho sobre una unidad real el 10/09/2026, leyendo el chip por
 USB-Serial-JTAG con esptool 5.4.0. Todo solo lectura.
 
 Cada dato indica su procedencia. Nada viene de una ficha tecnica.
+
+[Silicio](#silicio) · [Perifericos](#perifericos) · [Seguridad](#seguridad) ·
+[Particiones de fabrica](#tabla-de-particiones-de-fabrica) ·
+[El COM fantasma](#el-com-fantasma)
+
+---
+
+<img src="brand/hardware.svg" alt="ESP32-S3 LX7 dual-core a 240 MHz, 8 MB de PSRAM octal, 16 MB de flash, pantalla 240 x 284 ST7789 por SPI, PMU AXP2101, tactil CST816S, IMU QMI8658, codec ES8311 con ADC ES7210, ranura microSD." width="100%">
+
+---
 
 ## Silicio
 
@@ -21,6 +31,8 @@ Cada dato indica su procedencia. Nada viene de una ficha tecnica.
 | Calibracion | `TEMP_CALIB` -10,1 C, ADC V1 | eFuse |
 | VDD_SPI | 3,3 V forzado por eFuse | eFuse |
 
+---
+
 ## Perifericos
 
 | Funcion | Componente | Evidencia | Fuente |
@@ -37,13 +49,15 @@ Cada dato indica su procedencia. Nada viene de una ficha tecnica.
 
 El driver del ES7210 soporta cuatro microfonos; esta placa habilita dos.
 
-Waveshare comercializa el panel como **ST7789P**. Ese nombre no aparece en
-ningun simbolo del binario ni del SDK: el driver real es `esp_lcd_panel_st7789`.
-Es un nombre comercial, no una variante distinta de controlador.
+Waveshare comercializa el panel como **ST7789P**. Ese nombre no aparece en ningun
+simbolo del binario ni del SDK: el driver real es `esp_lcd_panel_st7789`. Es un
+nombre comercial, no una variante distinta de controlador.
 
-## Seguridad: chip completamente abierto
+---
 
-Ningun eFuse de bloqueo esta quemado.
+## Seguridad
+
+**Chip completamente abierto.** Ningun eFuse de bloqueo esta quemado.
 
 ```
 Secure Boot            DESHABILITADO
@@ -55,6 +69,8 @@ Modo download          HABILITADO
 JTAG                   HABILITADO
 SECURE_VERSION         0
 ```
+
+---
 
 ## Tabla de particiones de fabrica
 
@@ -75,14 +91,16 @@ Distinta de la de este repo. Se documenta para poder restaurar.
 MD5 de la tabla: `48169c71128b18621e2ca570abc41daa`.
 Termina en `0xFF5000`; quedan 44 KB sin asignar.
 
-`otadata` en blanco hace que el bootloader arranque `factory`, no `ota_0`. Por
-eso la placa de fabrica corre el demo de Waveshare y no Xiaozhi.
+`otadata` en blanco hace que el bootloader arranque `factory`, no `ota_0`. Por eso
+la placa de fabrica corre el demo de Waveshare y no Xiaozhi.
+
+---
 
 ## El COM fantasma
 
 El firmware de fabrica activa
-`sleep_gpio: Configure to isolate all GPIO pins in sleep state`. En light sleep
-el USB-Serial-JTAG deja de atender transferencias, pero Windows conserva el nodo
+`sleep_gpio: Configure to isolate all GPIO pins in sleep state`. En light sleep el
+USB-Serial-JTAG deja de atender transferencias, pero Windows conserva el nodo
 enumerado con los descriptores viejos:
 
 ```
@@ -95,6 +113,8 @@ escucha pasiva            0 bytes
 
 Salida: BOOT (GPIO0) apretado, enchufar USB, esperar 2 s, soltar.
 
+---
+
 ## Pendiente de verificar
 
 - Mapa de pines GPIO por periferico
@@ -102,10 +122,12 @@ Salida: BOOT (GPIO0) apretado, enchufar USB, esperar 2 s, soltar.
 - Capacidad y quimica de la bateria
 - Modelo exacto del RTC
 
+---
+
 ## Reproducir el relevamiento
 
-Nombres de subcomando con guion bajo, para que funcionen tanto con el esptool
-4.12 que trae ESP-IDF 5.5 como con el 5.x independiente:
+Nombres de subcomando con guion bajo, para que funcionen tanto con el esptool 4.12
+que trae ESP-IDF 5.5 como con el 5.x independiente:
 
 ```
 python -m esptool  --port COM3 chip_id
