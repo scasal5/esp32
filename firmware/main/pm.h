@@ -12,6 +12,7 @@ extern "C" {
 typedef struct {
     bool     present;   /* hay bateria conectada */
     bool     charging;  /* el PMU esta cargando */
+    bool     vbus;      /* hay USB en VBUS */
     int      percent;   /* 0..100, o -1 si el PMU no puede estimarlo */
     uint16_t batt_mv;   /* tension de bateria */
     uint16_t vbus_mv;   /* tension de VBUS (USB) */
