@@ -57,6 +57,8 @@ CONFIG_BSP_SPIFFS_PARTITION_LABEL="assets"
 CONFIG_LV_USE_CLIB_MALLOC=y
 # Widget lv_gif, para la imagen de inicio (docs/arquitectura.md).
 CONFIG_LV_USE_GIF=y
+# PNG subido desde Fondo (canvas del celular).
+CONFIG_LV_USE_LODEPNG=y
 # QR para el SoftAP de provision (WIFI:T:nopass;S:ws183-xxxx;;).
 CONFIG_LV_USE_QRCODE=y
 CONFIG_LV_USE_LOG=y

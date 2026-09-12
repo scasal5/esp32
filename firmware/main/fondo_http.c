@@ -1,9 +1,9 @@
 #include "fondo_http.h"
+#include "splash_gif.h"
 
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 
 #include "esp_event.h"
 #include "esp_heap_caps.h"
@@ -27,8 +27,9 @@ ESP_EVENT_DEFINE_BASE(FONDO_EVENT);
 
 static const char *TAG = "fondo_http";
 
-#define SPLASH_PATH  BSP_SPIFFS_MOUNT_POINT "/splash.gif"
-#define SPLASH_NEW   BSP_SPIFFS_MOUNT_POINT "/splash.new"
+extern const uint8_t fondo_form_html_start[] asm("_binary_fondo_form_html_start");
+extern const uint8_t fondo_form_html_end[] asm("_binary_fondo_form_html_end");
+
 #define SPLASH_MAX   (1024 * 1024)
 
 static httpd_handle_t s_httpd;
@@ -50,13 +51,16 @@ static bool take_lock(void)
     return s_lock != NULL && xSemaphoreTake(s_lock, portMAX_DELAY) == pdTRUE;
 }
 
-static bool gif_ok(const uint8_t *p, size_t n)
+static bool png_ok(const uint8_t *p, size_t n)
 {
-    if (n < 13 || (memcmp(p, "GIF87a", 6) != 0 && memcmp(p, "GIF89a", 6) != 0)) {
+    static const uint8_t mag[] = { 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a };
+    if (n < 24 || memcmp(p, mag, 8) != 0) {
         return false;
     }
-    unsigned w = (unsigned)(p[6] | (p[7] << 8));
-    unsigned h = (unsigned)(p[8] | (p[9] << 8));
+    unsigned w = ((unsigned)p[16] << 24) | ((unsigned)p[17] << 16) |
+                 ((unsigned)p[18] << 8) | p[19];
+    unsigned h = ((unsigned)p[20] << 24) | ((unsigned)p[21] << 16) |
+                 ((unsigned)p[22] << 8) | p[23];
     return w > 0 && h > 0 && w <= (unsigned)BSP_LCD_H_RES &&
            h <= (unsigned)BSP_LCD_V_RES;
 }
@@ -160,13 +164,31 @@ static void send_html(httpd_req_t *req, const char *html)
 static const char PAGE_WAIT[] =
     "<!DOCTYPE html><html><head>"
     "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-    "<meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"2\">"
-    "<title>ws183-os</title>"
-    "<style>body{font-family:sans-serif;background:#0A0A0A;color:#FAFAFA;"
-    "margin:24px}</style></head><body>"
+    "<meta charset=\"utf-8\"><title>ws183-os</title>"
+    "<style>"
+    "body{font-family:sans-serif;background:#0A0A0A;color:#FAFAFA;margin:24px}"
+    ".spin{width:48px;height:48px;border:4px solid #2A2A2A;border-top-color:#FAFAFA;"
+    "border-radius:50%;animation:s .8s linear infinite;margin:24px auto}"
+    "@keyframes s{to{transform:rotate(360deg)}}"
+    "</style></head><body>"
+    "<div id=\"on\">"
     "<h2>ws183-os</h2>"
+    "<div class=\"spin\"></div>"
     "<p>Esperando que acepten este celular en la placa.</p>"
-    "</body></html>";
+    "</div>"
+    "<div id=\"bye\" style=\"display:none\">"
+    "<h2>ws183-os</h2>"
+    "<p>Se cancelo en la placa.</p>"
+    "<p>Volve a Fondo y genera el QR de nuevo.</p>"
+    "</div>"
+    "<script>"
+    "function bye(){document.getElementById('on').style.display='none';"
+    "document.getElementById('bye').style.display='block';}"
+    "(function poll(){fetch('/status').then(r=>r.json()).then(j=>{"
+    "if(j.state==='allowed'){location.reload();return;}"
+    "if(j.state==='denied'){bye();return;}"
+    "setTimeout(poll,400);}).catch(()=>bye());})();"
+    "</script></body></html>";
 
 static const char PAGE_NO[] =
     "<!DOCTYPE html><html><head>"
@@ -187,77 +209,6 @@ static const char PAGE_BUSY[] =
     "<h2>ws183-os</h2>"
     "<p>Hay otro celular en la placa.</p>"
     "</body></html>";
-
-static const char PAGE_FORM[] =
-    "<!DOCTYPE html><html><head>"
-    "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-    "<meta charset=\"utf-8\"><title>ws183-os</title>"
-    "<style>"
-    "body{font-family:sans-serif;background:#0A0A0A;color:#FAFAFA;margin:24px}"
-    "input,button{width:100%;box-sizing:border-box;padding:14px;margin:10px 0;"
-    "font-size:18px;border-radius:10px;border:0}"
-    "button{background:#FAFAFA;color:#0A0A0A}"
-    ".hide{display:none}"
-    "</style></head><body>"
-    "<h2>Fondo</h2>"
-    "<p>PNG, JPG o GIF. La placa lo guarda a 240x284.</p>"
-    "<div id=\"box\">"
-    "<input id=\"f\" type=\"file\" accept=\"image/png,image/jpeg,image/gif,.png,.jpg,.jpeg,.gif\">"
-    "<button type=\"button\" id=\"go\">Subir</button>"
-    "</div>"
-    "<div id=\"wait\" class=\"hide\"><p>Subiendo...</p></div>"
-    "<div id=\"ok\" class=\"hide\"><p>Listo. El fondo queda en la placa.</p></div>"
-    "<div id=\"fail\" class=\"hide\"><p id=\"err\">No se pudo guardar.</p>"
-    "<button type=\"button\" id=\"retry\">Reintentar</button></div>"
-    "<script>"
-    "const $=id=>document.getElementById(id);"
-    "function show(id){['box','wait','ok','fail'].forEach(x=>$(x).classList.add('hide'));"
-    "$(id).classList.remove('hide');}"
-    "$('retry').onclick=()=>show('box');"
-    "function pal(){const p=new Uint8Array(768);for(let i=0;i<256;i++){"
-    "p[i*3]=(i>>5)*36;p[i*3+1]=((i>>2)&7)*36;p[i*3+2]=(i&3)*85;}return p;}"
-    "function idx(r,g,b){return ((r>>5)<<5)|((g>>5)<<2)|(b>>6);}"
-    "function gifFrom(imgd,w,h){"
-    "const px=new Uint8Array(w*h),d=imgd.data;"
-    "for(let i=0,p=0;i<px.length;i++,p+=4) px[i]=idx(d[p],d[p+1],d[p+2]);"
-    "const out=[];const u8=v=>out.push(v&255);const u16=v=>{u8(v);u8(v>>8);};"
-    "const s='GIF87a';for(let i=0;i<6;i++) u8(s.charCodeAt(i));"
-    "u16(w);u16(h);u8(0xF7);u8(0);u8(0);"
-    "const p=pal();for(let i=0;i<p.length;i++) u8(p[i]);"
-    "u8(0x2C);u16(0);u16(0);u16(w);u16(h);u8(0);u8(8);"
-    "const stream=[];let buf=0,nbits=0;"
-    "const emit=(code)=>{buf|=code<<nbits;nbits+=9;while(nbits>=8){"
-    "stream.push(buf&255);buf>>=8;nbits-=8;}};"
-    "emit(256);let c=0;for(let i=0;i<px.length;i++){emit(px[i]);c++;"
-    "if(c===100){emit(256);c=0;}}emit(257);if(nbits) stream.push(buf&255);"
-    "for(let i=0;i<stream.length;){const n=Math.min(255,stream.length-i);u8(n);"
-    "for(let j=0;j<n;j++) u8(stream[i++]);}u8(0);u8(0x3B);"
-    "return new Uint8Array(out);}"
-    "function cover(img){const w=240,h=284,cv=document.createElement('canvas');"
-    "cv.width=w;cv.height=h;const s=Math.max(w/img.width,h/img.height);"
-    "const dw=img.width*s,dh=img.height*s;"
-    "cv.getContext('2d').drawImage(img,(w-dw)/2,(h-dh)/2,dw,dh);"
-    "return gifFrom(cv.getContext('2d').getImageData(0,0,w,h),w,h);}"
-    "function gifFits(u){if(u.length<13)return false;"
-    "const t=String.fromCharCode(u[0],u[1],u[2],u[3],u[4],u[5]);"
-    "if(t!=='GIF87a'&&t!=='GIF89a')return false;"
-    "const w=u[6]|u[7]<<8,h=u[8]|u[9]<<8;"
-    "return w>0&&h>0&&w<=240&&h<=284&&u.length<=1048576;}"
-    "async function body(file){"
-    "if(file.type==='image/gif'||/\\.gif$/i.test(file.name)){"
-    "const u=new Uint8Array(await file.arrayBuffer());if(gifFits(u))return u;}"
-    "const url=URL.createObjectURL(file);"
-    "try{const img=await new Promise((ok,bad)=>{const i=new Image();"
-    "i.onload=()=>ok(i);i.onerror=bad;i.src=url;});return cover(img);}"
-    "finally{URL.revokeObjectURL(url);}}"
-    "$('go').onclick=async()=>{"
-    "const file=$('f').files[0];if(!file)return;show('wait');"
-    "try{const bin=await body(file);"
-    "const r=await fetch('/upload',{method:'POST',body:bin,"
-    "headers:{'Content-Type':'image/gif'}});"
-    "const j=await r.json();if(j.ok)show('ok');else{$('err').textContent=j.err||'fallo';show('fail');}}"
-    "catch(e){$('err').textContent='no se pudo enviar';show('fail');}};"
-    "</script></body></html>";
 
 static esp_err_t send_form(httpd_req_t *req)
 {
@@ -308,8 +259,10 @@ static esp_err_t send_form(httpd_req_t *req)
     }
 
     if (form) {
-        send_html(req, PAGE_FORM);
-        return ESP_OK;
+        httpd_resp_set_type(req, "text/html");
+        httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+        return httpd_resp_send(req, (const char *)fondo_form_html_start,
+                               fondo_form_html_end - fondo_form_html_start);
     }
     if (no) {
         send_html(req, PAGE_NO);
@@ -322,6 +275,26 @@ static esp_err_t send_form(httpd_req_t *req)
     }
     send_html(req, PAGE_WAIT);
     return ESP_OK;
+}
+
+static esp_err_t status_get(httpd_req_t *req)
+{
+    const char *state = "idle";
+    if (take_lock()) {
+        if (s_allowed) {
+            state = "allowed";
+        } else if (s_pending) {
+            state = "wait";
+        } else if (s_denied) {
+            state = "denied";
+        }
+        xSemaphoreGive(s_lock);
+    }
+    char json[40];
+    snprintf(json, sizeof(json), "{\"state\":\"%s\"}", state);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_sendstr(req, json);
 }
 
 static bool client_allowed(httpd_req_t *req)
@@ -338,25 +311,6 @@ static bool client_allowed(httpd_req_t *req)
     const bool ok = s_allowed && same_client(ip, mac, have_mac);
     xSemaphoreGive(s_lock);
     return ok;
-}
-
-static esp_err_t save_gif(const uint8_t *buf, size_t n)
-{
-    FILE *f = fopen(SPLASH_NEW, "wb");
-    if (f == NULL) {
-        return ESP_FAIL;
-    }
-    const size_t w = fwrite(buf, 1, n, f);
-    fclose(f);
-    if (w != n) {
-        unlink(SPLASH_NEW);
-        return ESP_FAIL;
-    }
-    unlink(SPLASH_PATH);
-    if (rename(SPLASH_NEW, SPLASH_PATH) != 0) {
-        return ESP_FAIL;
-    }
-    return ESP_OK;
 }
 
 static esp_err_t upload_post(httpd_req_t *req)
@@ -386,6 +340,12 @@ static esp_err_t upload_post(httpd_req_t *req)
 
     int got = 0;
     while (got < len) {
+        if (!fondo_http_allowed()) {
+            free(buf);
+            httpd_resp_set_status(req, "403 Forbidden");
+            httpd_resp_set_type(req, "application/json");
+            return httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"cancelado\"}");
+        }
         const int n = httpd_req_recv(req, (char *)buf + got, (size_t)(len - got));
         if (n <= 0) {
             free(buf);
@@ -397,21 +357,24 @@ static esp_err_t upload_post(httpd_req_t *req)
     }
 
     httpd_resp_set_type(req, "application/json");
-    if (!gif_ok(buf, (size_t)got)) {
+    const bool is_png = png_ok(buf, (size_t)got);
+    const bool is_gif = (got >= 13 &&
+                         (memcmp(buf, "GIF87a", 6) == 0 || memcmp(buf, "GIF89a", 6) == 0));
+    if (!is_png && !is_gif) {
         free(buf);
         esp_event_post(FONDO_EVENT, FONDO_EVENT_FAIL, NULL, 0, 0);
-        return httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"no es un GIF de 240x284\"}");
+        return httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"manda png o gif 240x284\"}");
     }
 
-    const esp_err_t err = save_gif(buf, (size_t)got);
+    const esp_err_t err = splash_gif_install(buf, (size_t)got);
     free(buf);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "save: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, "install: %s", esp_err_to_name(err));
         esp_event_post(FONDO_EVENT, FONDO_EVENT_FAIL, NULL, 0, 0);
-        return httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"no se pudo guardar\"}");
+        return httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"no se pudo aplicar\"}");
     }
 
-    ESP_LOGI(TAG, "splash.gif %d bytes", got);
+    ESP_LOGI(TAG, "splash.png %d bytes", got);
     esp_event_post(FONDO_EVENT, FONDO_EVENT_SAVED, NULL, 0, 0);
     return httpd_resp_sendstr(req, "{\"ok\":true}");
 }
@@ -424,7 +387,7 @@ esp_err_t fondo_http_start(void)
     cfg.lru_purge_enable = true;
     cfg.max_open_sockets = 7;
     cfg.max_uri_handlers = 8;
-    cfg.stack_size = 8192;
+    cfg.stack_size = 16384;
     cfg.recv_wait_timeout = 30;
     esp_log_level_set("httpd_uri", ESP_LOG_ERROR);
     esp_log_level_set("httpd_txrx", ESP_LOG_ERROR);
@@ -442,21 +405,29 @@ esp_err_t fondo_http_start(void)
     static const httpd_uri_t uri_upload = {
         .uri = "/upload", .method = HTTP_POST, .handler = upload_post
     };
+    static const httpd_uri_t uri_status = {
+        .uri = "/status", .method = HTTP_GET, .handler = status_get
+    };
     httpd_register_uri_handler(s_httpd, &uri_root);
     httpd_register_uri_handler(s_httpd, &uri_upload);
+    httpd_register_uri_handler(s_httpd, &uri_status);
     ESP_LOGI(TAG, "http up");
     return ESP_OK;
 }
 
 void fondo_http_stop(void)
 {
+    if (take_lock()) {
+        s_pending = false;
+        s_allowed = false;
+        s_denied = true;
+        xSemaphoreGive(s_lock);
+    }
     if (s_httpd != NULL) {
         httpd_stop(s_httpd);
         s_httpd = NULL;
     }
     if (take_lock()) {
-        s_pending = false;
-        s_allowed = false;
         s_denied = false;
         s_have_mac = false;
         s_ip = 0;

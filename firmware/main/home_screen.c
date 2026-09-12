@@ -23,6 +23,9 @@ static lv_obj_t *s_clock = NULL;
 static lv_obj_t *s_wifi = NULL;
 static lv_obj_t *s_battery = NULL;
 static lv_obj_t *s_usb = NULL;
+static lv_obj_t *s_bg = NULL;
+static lv_draw_buf_t *s_bg_buf = NULL;
+static lv_obj_t *s_gif = NULL;
 static time_t s_shown = -1;
 static bool s_wifi_shown = true;
 static bool s_usb_shown = true;
@@ -87,15 +90,57 @@ static void battery_update(lv_timer_t *timer)
     set_visible(s_usb, p != NULL && p->vbus, &s_usb_shown);
 }
 
+void home_screen_set_gif(lv_obj_t *gif)
+{
+    if (s_gif != NULL && s_gif != gif) {
+        lv_obj_delete(s_gif);
+        s_gif = NULL;
+    }
+    if (s_bg != NULL) {
+        lv_obj_delete(s_bg);
+        s_bg = NULL;
+    }
+    if (s_bg_buf != NULL) {
+        lv_draw_buf_destroy(s_bg_buf);
+        s_bg_buf = NULL;
+    }
+    s_gif = gif;
+    if (gif == NULL) {
+        return;
+    }
+    lv_obj_center(gif);
+    lv_obj_move_to_index(gif, 0);
+}
+
+void home_screen_set_bg(lv_draw_buf_t *bg)
+{
+    if (s_gif != NULL) {
+        lv_obj_delete(s_gif);
+        s_gif = NULL;
+    }
+    if (s_bg != NULL) {
+        lv_obj_delete(s_bg);
+        s_bg = NULL;
+    }
+    if (s_bg_buf != NULL) {
+        lv_draw_buf_destroy(s_bg_buf);
+        s_bg_buf = NULL;
+    }
+    s_bg_buf = bg;
+    if (bg == NULL) {
+        return;
+    }
+    s_bg = lv_image_create(lv_screen_active());
+    lv_image_set_src(s_bg, bg);
+    lv_obj_center(s_bg);
+    lv_obj_move_to_index(s_bg, 0);
+}
+
 void home_screen_show(lv_draw_buf_t *bg)
 {
     lv_obj_t *scr = lv_screen_active();
 
-    if (bg != NULL) {
-        lv_obj_t *img = lv_image_create(scr);
-        lv_image_set_src(img, bg);
-        lv_obj_center(img);
-    }
+    home_screen_set_bg(bg);
 
     /* La hora manda: ocupa su propia linea en la escala grande, y debajo va una
        fila de etiquetas chicas con el resto del estado. Las que no aplican se

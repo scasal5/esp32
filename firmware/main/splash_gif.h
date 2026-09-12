@@ -1,5 +1,10 @@
 #pragma once
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include "esp_err.h"
+
 /*
  * Arranque de la pantalla de inicio.
  *
@@ -10,3 +15,6 @@
  * inicio sale igual, sin fondo. Llamar despues de encender el backlight.
  */
 void splash_gif_start(void);
+
+/* PNG estatico o GIF animado 240x284. Lo pone de fondo y lo guarda. */
+esp_err_t splash_gif_install(const uint8_t *data, size_t len);

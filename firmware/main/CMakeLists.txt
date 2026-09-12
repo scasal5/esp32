@@ -4,4 +4,5 @@ idf_component_register(
          "pm_format.c" "shell.c"
          "splash_gif.c" "svc_wifi.c" "time_console.c" "wifi_portal.c" "wifi_scan_ui.c"
     INCLUDE_DIRS "."
+    EMBED_FILES "fondo_form.html"
 )

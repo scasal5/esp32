@@ -277,11 +277,13 @@ Evitar:
 
 ### Fase 1b: animacion
 
-Planeada. Cuando se implemente:
+El GIF de inicio se reproduce: `lv_gif` queda en la pantalla de inicio, loop
+infinito (`lv_gif_set_loop_count(gif, 0)`), sin pausar el timer. Un PNG
+subido desde Fondo sigue siendo fondo estatico. Un GIF se recorta a 240x284
+en el celular (se conservan los frames) y pisa `splash.gif`.
 
-- La animacion arranca con `lv_gif_resume()` cuando el arranque termino. **No con
-  `lv_gif_restart()`:** fuerza `loop_count = -1`, y la animacion se detiene al
-  completar una vuelta.
+- **No** usar `lv_gif_restart()`: fuerza `loop_count = -1`, y la animacion se
+  detiene al completar una vuelta.
 - Antes de dejarla activa por defecto se mide en hardware: tiempo por frame de
   `GIF_playFrame` (corre en la task de LVGL, asi que un frame lento demora el
   tactil), PSRAM libre antes y despues

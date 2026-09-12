@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -18,10 +19,13 @@
 #include "bsp/esp-bsp.h"
 #include "bsp/display.h"
 #include "lvgl.h"
+#include "libs/lodepng/lodepng.h"
 
 static const char *TAG = "splash_gif";
 
-#define SPLASH_PATH  BSP_SPIFFS_MOUNT_POINT "/splash.gif"
+#define SPLASH_PATH      BSP_SPIFFS_MOUNT_POINT "/splash.gif"
+#define SPLASH_PNG       BSP_SPIFFS_MOUNT_POINT "/splash.png"
+#define SPLASH_PNG_NEW   BSP_SPIFFS_MOUNT_POINT "/fondo.new"
 
 /* El archivo entero vive en PSRAM mientras se decodifica el frame 0. */
 #define SPLASH_MAX_BYTES  (1024 * 1024)
@@ -71,7 +75,6 @@ static esp_err_t mount_assets(void)
 static bool gif_header_ok(const uint8_t *p, size_t n)
 {
     if (n < 13 || (memcmp(p, "GIF87a", 6) != 0 && memcmp(p, "GIF89a", 6) != 0)) {
-        ESP_LOGW(TAG, "no es un GIF");
         return false;
     }
 
@@ -80,6 +83,25 @@ static bool gif_header_ok(const uint8_t *p, size_t n)
     if (w == 0 || h == 0 || w > BSP_LCD_H_RES || h > BSP_LCD_V_RES) {
         /* En la placa no se escala el GIF al leerlo: tiene que entrar tal cual. */
         ESP_LOGW(TAG, "GIF %ux%u fuera de %dx%d", w, h, BSP_LCD_H_RES, BSP_LCD_V_RES);
+        return false;
+    }
+    return true;
+}
+
+static bool png_header_ok(const uint8_t *p, size_t n)
+{
+    static const uint8_t mag[] = { 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a };
+    if (n < 24 || memcmp(p, mag, 8) != 0) {
+        return false;
+    }
+    unsigned w = ((unsigned)p[16] << 24) | ((unsigned)p[17] << 16) |
+                 ((unsigned)p[18] << 8) | p[19];
+    unsigned h = ((unsigned)p[20] << 24) | ((unsigned)p[21] << 16) |
+                 ((unsigned)p[22] << 8) | p[23];
+    if (w == 0 || h == 0 || w > (unsigned)BSP_LCD_H_RES ||
+        h > (unsigned)BSP_LCD_V_RES) {
+        ESP_LOGW(TAG, "PNG %ux%u fuera de %dx%d", w, h, BSP_LCD_H_RES,
+                 BSP_LCD_V_RES);
         return false;
     }
     return true;
@@ -121,32 +143,34 @@ static size_t read_splash(void)
     return len;
 }
 
-/*
- * Decodifica el frame 0 en un lv_gif oculto y en pausa. Con el lock tomado.
- * Devuelve NULL si lv_gif no pudo cargar el archivo.
- */
-static lv_obj_t *decode_frame0(size_t len)
+/* Lock de LVGL tomado. `data` tiene que vivir tanto como el objeto. */
+static lv_obj_t *gif_from_mem(const uint8_t *data, size_t len)
 {
     memset(&s_dsc, 0, sizeof(s_dsc));
     s_dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
-    s_dsc.data = s_buf;
+    s_dsc.data = data;
     s_dsc.data_size = len;
 
     lv_obj_t *gif = lv_gif_create(lv_screen_active());
-    /* Nunca se dibuja: solo se usa su framebuffer como fuente del fondo. */
-    lv_obj_add_flag(gif, LV_OBJ_FLAG_HIDDEN);
-    /* ARGB8888 antes de set_src: es el unico formato en el que lv_gif deja el
-       indice transparente del GIF como alfa 0. */
     lv_gif_set_color_format(gif, LV_COLOR_FORMAT_ARGB8888);
-    /* Decodifica el frame 0 y ademas arranca el timer: se pausa en la misma
-       seccion bloqueada, antes de que llegue a correr. */
     lv_gif_set_src(gif, &s_dsc);
-    lv_gif_pause(gif);
-
     if (!lv_gif_is_loaded(gif)) {
         lv_obj_delete(gif);
         return NULL;
     }
+    lv_gif_set_loop_count(gif, 0);
+    /*
+     * NO activar el auto-pause. lv_gif_set_src() ya dejo el timer corriendo y
+     * dibujo el frame 0; el objeto todavia no paso por un layout, asi que en el
+     * primer tick sus coordenadas estan vacias, lv_obj_is_visible() da falso y
+     * el widget se pausa solo. Nadie lo reanuda: lv_gif no reanuda al volver a
+     * ser visible (docs/arquitectura.md, fase 1b). Con el auto-pause activado
+     * la animacion queda congelada en el frame 1 para siempre.
+     */
+    lv_gif_set_auto_pause_invisible(gif, false);
+    lv_obj_set_style_opa(gif, LV_OPA_80, 0);
+    lv_obj_center(gif);
+    ESP_LOGI(TAG, "gif frames=%d", (int)lv_gif_get_frame_count(gif));
     return gif;
 }
 
@@ -266,54 +290,156 @@ static lv_draw_buf_t *make_background(const lv_draw_buf_t *src)
     return out;
 }
 
-/* Frame 0 de splash.gif convertido en fondo. NULL si no hay GIF usable o falta
-   memoria. Libera el archivo y el lv_gif antes de volver. */
-static lv_draw_buf_t *background_from_gif(void)
+static lv_draw_buf_t *background_from_png_mem(const uint8_t *data, size_t len)
 {
-    size_t len = read_splash();
-    if (len == 0) {
+    unsigned char *rgba = NULL;
+    unsigned w = 0;
+    unsigned h = 0;
+    const unsigned err = lodepng_decode32(&rgba, &w, &h, data, len);
+    if (err != 0 || rgba == NULL || w == 0 || h == 0 ||
+        w > (unsigned)BSP_LCD_H_RES || h > (unsigned)BSP_LCD_V_RES) {
+        ESP_LOGW(TAG, "png decode %u", err);
+        lv_free(rgba);
         return NULL;
     }
 
-    lv_draw_buf_t *bg = NULL;
-    int64_t t0 = esp_timer_get_time();
-
-    /* Timeout 0 en esp_lvgl_port = esperar sin limite. No usar portMAX_DELAY:
-       el valor esta en milisegundos y desborda al pasar a ticks. */
-    if (bsp_display_lock(0)) {
-        lv_obj_t *gif = decode_frame0(len);
-        const lv_draw_buf_t *frame =
-            gif != NULL ? (const lv_draw_buf_t *)lv_image_get_src(gif) : NULL;
-        bsp_display_unlock();
-        int64_t t1 = esp_timer_get_time();
-
-        if (frame == NULL) {
-            ESP_LOGW(TAG, "lv_gif no cargo el GIF");
-        } else {
-            /* Sin lock: el lv_gif esta oculto y en pausa, nadie escribe su
-               framebuffer mientras se procesa. */
-            bg = make_background(frame);
-            int64_t t2 = esp_timer_get_time();
-
-            if (bsp_display_lock(0)) {
-                lv_obj_delete(gif);
-                bsp_display_unlock();
-            }
-
-            if (bg != NULL) {
-                ESP_LOGI(TAG, "fondo %ux%u (decode %lld ms, proceso %lld ms)",
-                         (unsigned)bg->header.w, (unsigned)bg->header.h,
-                         (long long)((t1 - t0) / 1000), (long long)((t2 - t1) / 1000));
-            } else {
-                ESP_LOGW(TAG, "sin memoria para el fondo");
-            }
-        }
+    lv_draw_buf_t *src = lv_draw_buf_create(w, h, LV_COLOR_FORMAT_ARGB8888, 0);
+    if (src == NULL) {
+        lv_free(rgba);
+        return NULL;
     }
 
-    /* El lv_gif ya no existe: el archivo en PSRAM no se usa mas. */
-    heap_caps_free(s_buf);
-    s_buf = NULL;
+    /* lodepng: R,G,B,A. LVGL ARGB8888 en este panel: B,G,R,A. */
+    for (unsigned y = 0; y < h; y++) {
+        uint8_t *dst = src->data + y * src->header.stride;
+        const uint8_t *s = rgba + (size_t)y * w * 4;
+        for (unsigned x = 0; x < w; x++) {
+            dst[x * 4 + 0] = s[x * 4 + 2];
+            dst[x * 4 + 1] = s[x * 4 + 1];
+            dst[x * 4 + 2] = s[x * 4 + 0];
+            dst[x * 4 + 3] = s[x * 4 + 3];
+        }
+    }
+    lv_free(rgba);
+
+    lv_draw_buf_t *bg = make_background(src);
+    lv_draw_buf_destroy(src);
     return bg;
+}
+
+static lv_draw_buf_t *background_from_png_file(void)
+{
+    struct stat st;
+    if (stat(SPLASH_PNG, &st) != 0 || st.st_size <= 0 ||
+        st.st_size > SPLASH_MAX_BYTES) {
+        return NULL;
+    }
+
+    uint8_t *buf = heap_caps_malloc((size_t)st.st_size, MALLOC_CAP_SPIRAM);
+    if (buf == NULL) {
+        return NULL;
+    }
+    FILE *f = fopen(SPLASH_PNG, "rb");
+    size_t n = 0;
+    if (f != NULL) {
+        n = fread(buf, 1, (size_t)st.st_size, f);
+        fclose(f);
+    }
+    lv_draw_buf_t *bg = NULL;
+    if (n == (size_t)st.st_size && png_header_ok(buf, n)) {
+        bg = background_from_png_mem(buf, n);
+    }
+    heap_caps_free(buf);
+    return bg;
+}
+
+static esp_err_t write_file(const char *path, const uint8_t *data, size_t len)
+{
+    FILE *f = fopen(SPLASH_PNG_NEW, "wb");
+    if (f == NULL) {
+        return ESP_FAIL;
+    }
+    const size_t w = fwrite(data, 1, len, f);
+    fclose(f);
+    if (w != len) {
+        unlink(SPLASH_PNG_NEW);
+        return ESP_FAIL;
+    }
+    unlink(path);
+    if (rename(SPLASH_PNG_NEW, path) != 0) {
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t install_gif(const uint8_t *data, size_t len)
+{
+    uint8_t *nb = heap_caps_malloc(len, MALLOC_CAP_SPIRAM);
+    if (nb == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    memcpy(nb, data, len);
+    if (write_file(SPLASH_PATH, nb, len) != ESP_OK) {
+        heap_caps_free(nb);
+        ESP_LOGW(TAG, "no se pudo escribir %s", SPLASH_PATH);
+        return ESP_FAIL;
+    }
+    unlink(SPLASH_PNG);
+
+    if (!bsp_display_lock(0)) {
+        heap_caps_free(nb);
+        return ESP_FAIL;
+    }
+    lv_obj_t *gif = gif_from_mem(nb, len);
+    if (gif == NULL) {
+        bsp_display_unlock();
+        heap_caps_free(nb);
+        return ESP_FAIL;
+    }
+    home_screen_set_gif(gif);
+    uint8_t *old = s_buf;
+    s_buf = nb;
+    bsp_display_unlock();
+    if (old != NULL) {
+        heap_caps_free(old);
+    }
+    ESP_LOGI(TAG, "fondo gif %s (%u bytes)", SPLASH_PATH, (unsigned)len);
+    return ESP_OK;
+}
+
+static esp_err_t install_png(const uint8_t *data, size_t len)
+{
+    lv_draw_buf_t *bg = background_from_png_mem(data, len);
+    if (bg == NULL) {
+        return ESP_FAIL;
+    }
+    if (write_file(SPLASH_PNG, data, len) != ESP_OK) {
+        lv_draw_buf_destroy(bg);
+        ESP_LOGW(TAG, "no se pudo escribir %s", SPLASH_PNG);
+        return ESP_FAIL;
+    }
+    if (!bsp_display_lock(0)) {
+        lv_draw_buf_destroy(bg);
+        return ESP_FAIL;
+    }
+    home_screen_set_bg(bg);
+    bsp_display_unlock();
+    ESP_LOGI(TAG, "fondo png %s (%u bytes)", SPLASH_PNG, (unsigned)len);
+    return ESP_OK;
+}
+
+esp_err_t splash_gif_install(const uint8_t *data, size_t len)
+{
+    if (data == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (gif_header_ok(data, len)) {
+        return install_gif(data, len);
+    }
+    if (png_header_ok(data, len)) {
+        return install_png(data, len);
+    }
+    return ESP_ERR_INVALID_ARG;
 }
 
 static void splash_gif_task(void *arg)
@@ -323,19 +449,33 @@ static void splash_gif_task(void *arg)
     /* Sin assets-flash, la zona de assets tiene restos del firmware de fabrica:
        el mount falla, y eso es el fallback, no un error fatal. */
     lv_draw_buf_t *bg = NULL;
+    size_t gif_len = 0;
     esp_err_t err = mount_assets();
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "spiffs: %s (falta assets-flash?)", esp_err_to_name(err));
     } else {
-        bg = background_from_gif();
+        bg = background_from_png_file();
+        if (bg == NULL) {
+            gif_len = read_splash();
+        }
     }
 
     /* Con o sin fondo, la hora y la bateria reemplazan al splash de texto. */
     if (bsp_display_lock(0)) {
         boot_splash_hide_text();
         home_screen_show(bg);
+        if (bg == NULL && gif_len > 0) {
+            lv_obj_t *gif = gif_from_mem(s_buf, gif_len);
+            if (gif != NULL) {
+                home_screen_set_gif(gif);
+            } else {
+                heap_caps_free(s_buf);
+                s_buf = NULL;
+            }
+        }
         bsp_display_unlock();
-        ESP_LOGI(TAG, "pantalla de inicio visible%s", bg != NULL ? "" : " (sin fondo)");
+        ESP_LOGI(TAG, "pantalla de inicio visible%s",
+                 bg != NULL ? "" : (gif_len > 0 ? " (gif)" : " (sin fondo)"));
     }
 
     ESP_LOGI(TAG, "stack libre: %u bytes", (unsigned)uxTaskGetStackHighWaterMark(NULL));
