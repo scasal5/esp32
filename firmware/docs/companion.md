@@ -26,7 +26,7 @@ Se abre desde la card **WiFi** (o `wifiprov <ssid>` por consola). SoftAP abierto
 |---|---|---|---|
 | `GET` | `/` | — | HTML del formulario (o “esperando Si en la placa”) |
 | `GET` | `/status` | — | JSON `{"state":"idle\|connecting\|up\|fail","ssid":"..."}` |
-| `POST` | `/connect` | **`application/x-www-form-urlencoded`**: `ssid=...&pass=...` (no JSON) | JSON `{"ok":true}` |
+| `POST` | `/connect` | **`application/x-www-form-urlencoded`**: `ssid=...&pass=...` | `{"ok":true}` · **415** si Content-Type no es form (p.ej. JSON) · **400** `{"ok":false}` sin ssid/pass · **403** si no hubo Si |
 
 El formulario hace `fetch POST /connect` con `URLSearchParams` / `FormData` y
 luego hace poll a `GET /status` hasta `up` o `fail`. **No redirige.**
@@ -34,6 +34,18 @@ luego hace poll a `GET /status` hasta `up` o `fail`. **No redirige.**
 El SoftAP **no** se baja en el primer `IP_EVENT_STA_GOT_IP`: la UI espera ~10 s
 despues de `up` para que el celular vea el resultado, y recien ahi cierra
 (o el usuario con BOOT / Cerrar).
+
+### Riesgo SoftAP abierto (aceptado en v0)
+
+El SoftAP es red **abierta** (`WIFI:T:nopass`). Quien se une y gana el Si/No
+en la placa envia la clave de la WiFi destino por **HTTP en claro** hacia
+`192.168.4.1`. El gate Si/No **no** mitiga sniff en radio. Mitigaciones v0:
+un solo cliente, ventana corta, SoftAP que baja al cerrar la UI, y aviso en
+la UX. WPA2 en SoftAP queda fuera de v0 (P1/P2).
+
+`GET /connect` y `GET /status` **no** envian CORS generico; solo el endpoint
+captive usa `Access-Control-Allow-Origin: *`.
+
 
 Arranque: SoftAP/HTTP viven en tasks propias (`httpd`, DNS). `app_main` inicia
 WiFi **despues** del primer frame LVGL; el portal no bloquea el splash.

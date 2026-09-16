@@ -263,6 +263,20 @@ static esp_err_t send_captive_api(httpd_req_t *req)
         "\"user-portal-url\":\"http://192.168.4.1/\"}");
 }
 
+static bool content_type_is_form(httpd_req_t *req)
+{
+    size_t n = httpd_req_get_hdr_value_len(req, "Content-Type");
+    if (n == 0 || n >= 96) {
+        return false;
+    }
+    char ct[96];
+    if (httpd_req_get_hdr_value_str(req, "Content-Type", ct, sizeof(ct)) != ESP_OK) {
+        return false;
+    }
+    /* Accept charset suffix, e.g. application/x-www-form-urlencoded; charset=UTF-8 */
+    return strncmp(ct, "application/x-www-form-urlencoded", 33) == 0;
+}
+
 static esp_err_t connect_post(httpd_req_t *req)
 {
     if (!svc_wifi_prov_allowed()) {
@@ -271,11 +285,19 @@ static esp_err_t connect_post(httpd_req_t *req)
         return httpd_resp_sendstr(req, "{\"ok\":false}");
     }
 
+    if (!content_type_is_form(req)) {
+        httpd_resp_set_status(req, "415 Unsupported Media Type");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+        return httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"form-urlencoded\"}");
+    }
+
     char body[256];
     int len = httpd_req_recv(req, body, sizeof(body) - 1);
     if (len <= 0) {
         httpd_resp_set_status(req, "400 Bad Request");
-        return httpd_resp_send(req, "sin datos", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"sin datos\"}");
     }
     body[len] = '\0';
 
@@ -295,7 +317,14 @@ static esp_err_t connect_post(httpd_req_t *req)
     ESP_LOGI(TAG, "portal submit ssid=%s pass_len=%u", ssid,
              (unsigned)strlen(pass));
 
-    if (s_on_pass != NULL && ssid[0] != '\0' && pass[0] != '\0') {
+    if (ssid[0] == '\0' || pass[0] == '\0') {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+        return httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"ssid/pass\"}");
+    }
+
+    if (s_on_pass != NULL) {
         strncpy(s_target, ssid, sizeof(s_target) - 1);
         s_on_pass(ssid, pass);
     }
