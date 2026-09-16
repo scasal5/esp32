@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -19,9 +20,11 @@ ESP_EVENT_DEFINE_BASE(SVC_WIFI_EVENT);
 static const char *TAG = "wifi";
 
 #define WIFI_RECORD_BUFFER 64
-#define NVS_NS             "wifi"
+#define NVS_NS             "ws183_wifi"
+#define NVS_NS_LEGACY      "wifi"
 #define NVS_KEY_SSID       "ssid"
 #define NVS_KEY_PASS       "pass"
+#define RECONNECT_MAX_MS   30000u
 
 static SemaphoreHandle_t s_lock;
 static svc_wifi_ap_t s_results[SVC_WIFI_MAX_RESULTS];
@@ -33,6 +36,12 @@ static bool s_connecting;
 static bool s_link_fail;
 static bool s_scan_in_progress;
 static bool s_scan_pending;
+static bool s_user_disconnect;   /* wifidisconnect: no auto-reconnect */
+static bool s_auto_reconnect;    /* true despues de GOT_IP con creds */
+static uint8_t s_reconnect_tries;
+static esp_timer_handle_t s_reconnect_timer;
+
+esp_err_t svc_wifi_connect(const char *ssid, const char *pass);
 
 /*
  * Un scan tarda segundos y su consumidor se puede ir antes: la pantalla de WiFi
@@ -89,6 +98,18 @@ static esp_err_t scan_start_now(void)
     return esp_wifi_scan_start(&config, false);
 }
 
+static void nvs_erase_ns(const char *ns)
+{
+    nvs_handle_t h;
+    if (nvs_open(ns, NVS_READWRITE, &h) != ESP_OK) {
+        return;
+    }
+    nvs_erase_key(h, NVS_KEY_SSID);
+    nvs_erase_key(h, NVS_KEY_PASS);
+    nvs_commit(h);
+    nvs_close(h);
+}
+
 static void creds_save(const char *ssid, const char *pass)
 {
     if (ssid == NULL || ssid[0] == '\0' || pass == NULL || pass[0] == '\0') {
@@ -102,42 +123,114 @@ static void creds_save(const char *ssid, const char *pass)
     nvs_set_str(h, NVS_KEY_PASS, pass);
     nvs_commit(h);
     nvs_close(h);
+    /* Deja de usar el namespace legacy del stack si habia datos. */
+    nvs_erase_ns(NVS_NS_LEGACY);
 }
 
 static void creds_clear(void)
 {
     s_saved_ssid[0] = '\0';
     s_saved_pass[0] = '\0';
+    nvs_erase_ns(NVS_NS);
+    nvs_erase_ns(NVS_NS_LEGACY);
+}
+
+static bool nvs_read_creds(const char *ns, char *ssid, size_t ssid_sz,
+                           char *pass, size_t pass_sz)
+{
     nvs_handle_t h;
-    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) {
-        return;
+    if (nvs_open(ns, NVS_READONLY, &h) != ESP_OK) {
+        return false;
     }
-    nvs_erase_key(h, NVS_KEY_SSID);
-    nvs_erase_key(h, NVS_KEY_PASS);
-    nvs_commit(h);
+    size_t ssid_len = ssid_sz;
+    size_t pass_len = pass_sz;
+    bool ok = nvs_get_str(h, NVS_KEY_SSID, ssid, &ssid_len) == ESP_OK &&
+              ssid[0] != '\0';
+    if (!ok) {
+        ssid[0] = '\0';
+    }
+    if (nvs_get_str(h, NVS_KEY_PASS, pass, &pass_len) != ESP_OK) {
+        pass[0] = '\0';
+    }
     nvs_close(h);
+    return ok;
 }
 
 static void creds_load(void)
 {
-    nvs_handle_t h;
-    if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) {
-        return;
+    s_saved_ssid[0] = '\0';
+    s_saved_pass[0] = '\0';
+    if (!nvs_read_creds(NVS_NS, s_saved_ssid, sizeof(s_saved_ssid),
+                        s_saved_pass, sizeof(s_saved_pass))) {
+        if (nvs_read_creds(NVS_NS_LEGACY, s_saved_ssid, sizeof(s_saved_ssid),
+                           s_saved_pass, sizeof(s_saved_pass))) {
+            ESP_LOGI(TAG, "nvs: migrando creds de '%s' a '%s'", NVS_NS_LEGACY,
+                     NVS_NS);
+            if (s_saved_ssid[0] != '\0' && s_saved_pass[0] != '\0') {
+                creds_save(s_saved_ssid, s_saved_pass);
+            }
+        }
     }
-    size_t ssid_len = sizeof(s_saved_ssid);
-    size_t pass_len = sizeof(s_saved_pass);
-    if (nvs_get_str(h, NVS_KEY_SSID, s_saved_ssid, &ssid_len) != ESP_OK) {
-        s_saved_ssid[0] = '\0';
-    }
-    if (nvs_get_str(h, NVS_KEY_PASS, s_saved_pass, &pass_len) != ESP_OK) {
-        s_saved_pass[0] = '\0';
-    }
-    nvs_close(h);
     /* No reconectar a una red abierta guardada por error. */
     if (s_saved_ssid[0] != '\0' && s_saved_pass[0] == '\0') {
         ESP_LOGW(TAG, "nvs: red abierta, se ignora");
         creds_clear();
     }
+}
+
+static void reconnect_timer_stop(void)
+{
+    if (s_reconnect_timer != NULL) {
+        (void)esp_timer_stop(s_reconnect_timer);
+    }
+}
+
+static void reconnect_timer_cb(void *arg)
+{
+    (void)arg;
+    char ssid[33] = { 0 };
+    char pass[65] = { 0 };
+    bool go = false;
+    if (take_lock()) {
+        if (!s_user_disconnect && s_auto_reconnect && !s_connected &&
+            !s_connecting && s_saved_ssid[0] != '\0' &&
+            s_saved_pass[0] != '\0') {
+            strncpy(ssid, s_saved_ssid, sizeof(ssid) - 1);
+            strncpy(pass, s_saved_pass, sizeof(pass) - 1);
+            go = true;
+        }
+        xSemaphoreGive(s_lock);
+    }
+    if (go) {
+        ESP_LOGI(TAG, "reconnect %s (try %u)", ssid,
+                 (unsigned)s_reconnect_tries);
+        (void)svc_wifi_connect(ssid, pass);
+    }
+}
+
+static void schedule_reconnect(void)
+{
+    if (s_reconnect_timer == NULL) {
+        const esp_timer_create_args_t args = {
+            .callback = &reconnect_timer_cb,
+            .name = "wifi_re",
+        };
+        if (esp_timer_create(&args, &s_reconnect_timer) != ESP_OK) {
+            ESP_LOGW(TAG, "reconnect timer create fail");
+            return;
+        }
+    }
+    uint32_t shift = s_reconnect_tries < 5 ? s_reconnect_tries : 5;
+    uint32_t ms = 1000u << shift;
+    if (ms > RECONNECT_MAX_MS) {
+        ms = RECONNECT_MAX_MS;
+    }
+    if (s_reconnect_tries < 255) {
+        s_reconnect_tries++;
+    }
+    reconnect_timer_stop();
+    ESP_LOGI(TAG, "reconnect in %u ms", (unsigned)ms);
+    (void)esp_timer_start_once(s_reconnect_timer, (uint64_t)ms * 1000ULL);
 }
 
 static void make_ap_name(void)
@@ -195,6 +288,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         const wifi_event_sta_disconnected_t *d = event_data;
         const uint8_t reason = d != NULL ? d->reason : 0;
         bool fail = false;
+        bool do_re = false;
         if (take_lock()) {
             s_connected = false;
             s_sta_ssid[0] = '\0';
@@ -202,13 +296,28 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
             if (s_connecting && reason != WIFI_REASON_ASSOC_LEAVE) {
                 s_connecting = false;
                 s_link_fail = true;
-                fail = true;
+                /* Fallo del primer intento (o intento sin sesion up): avisar UI.
+                   Si ya hubo GOT_IP (s_auto_reconnect), reintentamos abajo. */
+                if (!s_auto_reconnect) {
+                    fail = true;
+                }
+            } else {
+                s_connecting = false;
             }
+            /* No rearmar si el disconnect lo pidio connect() (ASSOC_LEAVE). */
+            do_re = s_auto_reconnect && !s_user_disconnect &&
+                    reason != WIFI_REASON_ASSOC_LEAVE &&
+                    s_saved_ssid[0] != '\0' && s_saved_pass[0] != '\0';
             xSemaphoreGive(s_lock);
         }
         if (fail) {
             ESP_LOGW(TAG, "connect fail reason=%u", (unsigned)reason);
             esp_event_post(SVC_WIFI_EVENT, SVC_WIFI_EVENT_CONNECT_FAIL, NULL, 0, 0);
+        } else {
+            ESP_LOGI(TAG, "STA disconnect reason=%u", (unsigned)reason);
+        }
+        if (do_re) {
+            schedule_reconnect();
         }
         return;
     }
@@ -385,7 +494,12 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
         } else {
             ESP_LOGI(TAG, "IP up");
         }
-        creds_save(s_sta_ssid, s_saved_pass);
+        s_auto_reconnect = true;
+        s_user_disconnect = false;
+        s_reconnect_tries = 0;
+        reconnect_timer_stop();
+        /* Usar s_saved_* (no s_sta_ssid): DISCONNECTED puede vaciar el SSID. */
+        creds_save(s_saved_ssid, s_saved_pass);
         /* El SoftAP sigue un rato: el celular tiene que poder preguntar
            /status y ver el resultado. Lo corta la UI al cerrar. */
         esp_event_post(SVC_WIFI_EVENT, SVC_WIFI_EVENT_CONNECTED, NULL, 0, 0);
@@ -419,7 +533,7 @@ esp_err_t svc_wifi_start(void)
         return ESP_OK;
     }
 
-    /* NVS es del driver (calibracion PHY) y del namespace "wifi". */
+    /* NVS es del driver (calibracion PHY) y de ws183_wifi (creds propias). */
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_LOGW(TAG, "nvs: %s, se formatea", esp_err_to_name(err));
@@ -608,6 +722,10 @@ bool svc_wifi_ip(char *out, size_t n)
 
 void svc_wifi_disconnect(void)
 {
+    s_user_disconnect = true;
+    s_auto_reconnect = false;
+    s_reconnect_tries = 0;
+    reconnect_timer_stop();
     if (take_lock()) {
         s_connecting = false;
         s_connected = false;
@@ -639,13 +757,16 @@ esp_err_t svc_wifi_connect(const char *ssid, const char *pass)
     cfg.sta.pmf_cfg.capable = true;
     cfg.sta.pmf_cfg.required = false;
 
+    s_user_disconnect = false;
     if (take_lock()) {
         s_connecting = true;
         s_link_fail = false;
         strncpy(s_sta_ssid, ssid, sizeof(s_sta_ssid) - 1);
         s_sta_ssid[sizeof(s_sta_ssid) - 1] = '\0';
         strncpy(s_saved_ssid, ssid, sizeof(s_saved_ssid) - 1);
+        s_saved_ssid[sizeof(s_saved_ssid) - 1] = '\0';
         strncpy(s_saved_pass, pass != NULL ? pass : "", sizeof(s_saved_pass) - 1);
+        s_saved_pass[sizeof(s_saved_pass) - 1] = '\0';
         xSemaphoreGive(s_lock);
     }
 
@@ -661,6 +782,8 @@ esp_err_t svc_wifi_connect(const char *ssid, const char *pass)
         }
         return err;
     }
+    /* Persistir ya: GOT_IP puede correr despues de un DISCONNECTED que vacio ssid. */
+    creds_save(ssid, pass);
     err = esp_wifi_connect();
     if (err != ESP_OK) {
         if (take_lock()) {
