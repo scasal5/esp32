@@ -108,6 +108,8 @@ tensiones de bateria, VBUS y sistema. Todavia no hay logica de carga ni de apaga
 
 ## WiFi
 
+Contrato HTTP del companion (SoftAP + Fondo): [`docs/companion.md`](docs/companion.md).
+
 El servicio inicia WiFi en modo STA despues del primer frame. Al abrir la card **WiFi**
 del carrusel, ejecuta un scan asincrono y muestra hasta 16 redes cercanas, ordenadas por
 RSSI. Los SSID repetidos se consolidan y se conserva la senal mas fuerte; las protegidas

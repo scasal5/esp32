@@ -22,5 +22,6 @@
  */
 void splash_gif_start(void);
 
-/* PNG estatico o GIF animado 240x284. Lo pone de fondo y lo guarda. */
+/* PNG estatico o GIF animado 240x284. Lo pone de fondo y lo guarda
+ * via splash.new -> validar -> rename (fallo no deja archivo a medias). */
 esp_err_t splash_gif_install(const uint8_t *data, size_t len);

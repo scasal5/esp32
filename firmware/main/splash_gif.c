@@ -25,7 +25,7 @@ static const char *TAG = "splash_gif";
 
 #define SPLASH_PATH      BSP_SPIFFS_MOUNT_POINT "/splash.gif"
 #define SPLASH_PNG       BSP_SPIFFS_MOUNT_POINT "/splash.png"
-#define SPLASH_PNG_NEW   BSP_SPIFFS_MOUNT_POINT "/fondo.new"
+#define SPLASH_NEW       BSP_SPIFFS_MOUNT_POINT "/splash.new"
 
 /* El archivo entero vive en PSRAM mientras se decodifica el frame 0. */
 #define SPLASH_MAX_BYTES  (1024 * 1024)
@@ -364,20 +364,34 @@ static lv_draw_buf_t *background_from_png_file(void)
     return bg;
 }
 
-static esp_err_t write_file(const char *path, const uint8_t *data, size_t len)
+/*
+ * Guardado seguro (docs/arquitectura.md):
+ *   1. escribir splash.new completo y cerrar
+ *   2. validar cabecera
+ *   3. borrar el destino (SPIFFS no pisa con rename)
+ *   4. rename splash.new -> destino
+ * Si el rename falla despues del unlink, splash.new queda para recover_splash_new().
+ */
+static esp_err_t write_file(const char *path, const uint8_t *data, size_t len,
+                            bool (*ok)(const uint8_t *, size_t))
 {
-    FILE *f = fopen(SPLASH_PNG_NEW, "wb");
+    FILE *f = fopen(SPLASH_NEW, "wb");
     if (f == NULL) {
         return ESP_FAIL;
     }
     const size_t w = fwrite(data, 1, len, f);
     fclose(f);
     if (w != len) {
-        unlink(SPLASH_PNG_NEW);
+        unlink(SPLASH_NEW);
+        return ESP_FAIL;
+    }
+    if (ok != NULL && !ok(data, len)) {
+        unlink(SPLASH_NEW);
         return ESP_FAIL;
     }
     unlink(path);
-    if (rename(SPLASH_PNG_NEW, path) != 0) {
+    if (rename(SPLASH_NEW, path) != 0) {
+        ESP_LOGW(TAG, "rename %s fallo; queda splash.new", path);
         return ESP_FAIL;
     }
     return ESP_OK;
@@ -390,7 +404,7 @@ static esp_err_t install_gif(const uint8_t *data, size_t len)
         return ESP_ERR_NO_MEM;
     }
     memcpy(nb, data, len);
-    if (write_file(SPLASH_PATH, nb, len) != ESP_OK) {
+    if (write_file(SPLASH_PATH, nb, len, gif_header_ok) != ESP_OK) {
         heap_caps_free(nb);
         ESP_LOGW(TAG, "no se pudo escribir %s", SPLASH_PATH);
         return ESP_FAIL;
@@ -440,7 +454,7 @@ static esp_err_t install_png(const uint8_t *data, size_t len)
     if (bg == NULL) {
         return ESP_FAIL;
     }
-    if (write_file(SPLASH_PNG, data, len) != ESP_OK) {
+    if (write_file(SPLASH_PNG, data, len, png_header_ok) != ESP_OK) {
         lv_draw_buf_destroy(bg);
         ESP_LOGW(TAG, "no se pudo escribir %s", SPLASH_PNG);
         return ESP_FAIL;
@@ -477,6 +491,62 @@ esp_err_t splash_gif_install(const uint8_t *data, size_t len)
     return ESP_ERR_INVALID_ARG;
 }
 
+
+/* Si un corte dejo splash.new valido y falta el destino, termina el rename. */
+static void recover_splash_new(void)
+{
+    struct stat st;
+    if (stat(SPLASH_NEW, &st) != 0 || st.st_size <= 0 ||
+        st.st_size > SPLASH_MAX_BYTES) {
+        return;
+    }
+
+    uint8_t *buf = heap_caps_malloc((size_t)st.st_size,
+                                   MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (buf == NULL) {
+        return;
+    }
+
+    FILE *f = fopen(SPLASH_NEW, "rb");
+    size_t n = 0;
+    if (f != NULL) {
+        n = fread(buf, 1, (size_t)st.st_size, f);
+        fclose(f);
+    }
+    if (n != (size_t)st.st_size) {
+        unlink(SPLASH_NEW);
+        heap_caps_free(buf);
+        return;
+    }
+
+    const char *dest = NULL;
+    if (gif_header_ok(buf, n)) {
+        dest = SPLASH_PATH;
+    } else if (png_header_ok(buf, n)) {
+        dest = SPLASH_PNG;
+    } else {
+        ESP_LOGW(TAG, "splash.new invalido, se borra");
+        unlink(SPLASH_NEW);
+        heap_caps_free(buf);
+        return;
+    }
+
+    struct stat dest_st;
+    if (stat(dest, &dest_st) == 0) {
+        /* Destino ya existe: temp huerfano. */
+        unlink(SPLASH_NEW);
+        heap_caps_free(buf);
+        return;
+    }
+
+    if (rename(SPLASH_NEW, dest) != 0) {
+        ESP_LOGW(TAG, "no se pudo recuperar %s desde splash.new", dest);
+    } else {
+        ESP_LOGI(TAG, "recuperado %s desde splash.new", dest);
+    }
+    heap_caps_free(buf);
+}
+
 static void splash_gif_task(void *arg)
 {
     (void)arg;
@@ -489,6 +559,7 @@ static void splash_gif_task(void *arg)
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "spiffs: %s (falta assets-flash?)", esp_err_to_name(err));
     } else {
+        recover_splash_new();
         bg = background_from_png_file();
         if (bg == NULL) {
             gif_len = read_splash();

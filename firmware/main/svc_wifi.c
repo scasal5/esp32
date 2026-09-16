@@ -670,6 +670,11 @@ esp_err_t svc_wifi_connect(const char *ssid, const char *pass)
 
 esp_err_t svc_wifi_prov_start(const char *ssid)
 {
+#if !CONFIG_WS183_COMPANION
+    (void)ssid;
+    ESP_LOGW(TAG, "companion off: SoftAP portal deshabilitado");
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
     if (!s_inited || ssid == NULL || ssid[0] == '\0') {
         return ESP_ERR_INVALID_STATE;
     }
