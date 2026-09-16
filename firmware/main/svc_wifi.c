@@ -38,6 +38,7 @@ static bool s_scan_in_progress;
 static bool s_scan_pending;
 static bool s_user_disconnect;   /* wifidisconnect: no auto-reconnect */
 static bool s_auto_reconnect;    /* true despues de GOT_IP con creds */
+static bool s_reconnect_call;    /* connect() desde timer: no bajar s_auto_reconnect */
 static uint8_t s_reconnect_tries;
 static esp_timer_handle_t s_reconnect_timer;
 
@@ -204,6 +205,7 @@ static void reconnect_timer_cb(void *arg)
     if (go) {
         ESP_LOGI(TAG, "reconnect %s (try %u)", ssid,
                  (unsigned)s_reconnect_tries);
+        s_reconnect_call = true;
         (void)svc_wifi_connect(ssid, pass);
     }
 }
@@ -312,6 +314,8 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         }
         if (fail) {
             ESP_LOGW(TAG, "connect fail reason=%u", (unsigned)reason);
+            /* Intento nuevo fallido: RAM puede tener pass mala; NVS intacto. */
+            creds_load();
             esp_event_post(SVC_WIFI_EVENT, SVC_WIFI_EVENT_CONNECT_FAIL, NULL, 0, 0);
         } else {
             ESP_LOGI(TAG, "STA disconnect reason=%u", (unsigned)reason);
@@ -758,11 +762,20 @@ esp_err_t svc_wifi_connect(const char *ssid, const char *pass)
     cfg.sta.pmf_cfg.required = false;
 
     s_user_disconnect = false;
+    /* Nuevo intento (UI/portal/boot): no rearmar reconnect hasta GOT_IP.
+       El timer de reconnect pone s_reconnect_call para conservar s_auto_reconnect. */
+    if (!s_reconnect_call) {
+        s_auto_reconnect = false;
+        reconnect_timer_stop();
+        s_reconnect_tries = 0;
+    }
+    s_reconnect_call = false;
     if (take_lock()) {
         s_connecting = true;
         s_link_fail = false;
         strncpy(s_sta_ssid, ssid, sizeof(s_sta_ssid) - 1);
         s_sta_ssid[sizeof(s_sta_ssid) - 1] = '\0';
+        /* Solo RAM hasta GOT_IP; NVS se escribe ahi. */
         strncpy(s_saved_ssid, ssid, sizeof(s_saved_ssid) - 1);
         s_saved_ssid[sizeof(s_saved_ssid) - 1] = '\0';
         strncpy(s_saved_pass, pass != NULL ? pass : "", sizeof(s_saved_pass) - 1);
@@ -782,8 +795,6 @@ esp_err_t svc_wifi_connect(const char *ssid, const char *pass)
         }
         return err;
     }
-    /* Persistir ya: GOT_IP puede correr despues de un DISCONNECTED que vacio ssid. */
-    creds_save(ssid, pass);
     err = esp_wifi_connect();
     if (err != ESP_OK) {
         if (take_lock()) {
