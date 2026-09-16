@@ -32,4 +32,22 @@ menu "ws183-os"
             Tarjeta "Ajustes" en el lanzador. Todavia no abre nada; la tarjeta
             solo avisa que viene.
 
+    config WS183_COMPANION
+        bool "Companion (SoftAP portal + Fondo HTTP)"
+        default y
+        help
+            Portal SoftAP en 192.168.4.1 (GET /, GET /status, POST /connect
+            form-urlencoded) y HTTP de Fondo para subir splash.png/gif.
+            Apagarlo deshabilita ambas UIs HTTP del celular; STA, scan y el
+            resto del firmware siguen. Ver docs/companion.md.
+
+    config WS183_PROV_AUTO_ALLOW
+        bool "Lab: auto-allow SoftAP client (skip Si/No)"
+        depends on WS183_COMPANION
+        default n
+        help
+            Solo lab/harness. Cuando el primer cliente se asocia al SoftAP,
+            llama a svc_wifi_prov_allow() sin tocar Si en la placa. No usar
+            en builds de produccion. Ver docs/companion.md.
+
 endmenu

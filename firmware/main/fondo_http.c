@@ -381,6 +381,10 @@ static esp_err_t upload_post(httpd_req_t *req)
 
 esp_err_t fondo_http_start(void)
 {
+#if !CONFIG_WS183_COMPANION
+    ESP_LOGW(TAG, "companion off: Fondo HTTP deshabilitado");
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
     fondo_http_stop();
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();

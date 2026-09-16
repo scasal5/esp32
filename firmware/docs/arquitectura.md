@@ -152,13 +152,15 @@ credenciales viven en NVS (`wifi`) y nunca en el repo.
 
 ### Portal de clave (celular)
 
+API y prueba del companion: [`companion.md`](companion.md).
+
 El QR `WIFI:` solo une el celular al SoftAP. Un solo cliente a la vez
 (`max_connection = 1`; cualquier otra MAC se desasocia). Cuando asocia, la
 placa muestra su MAC y pide Si/No (30 s visibles; No lo desasocia). Recien
 con Si se genera el segundo QR (`http://192.168.4.1/`). Hasta entonces el
 HTTP del portal responde que hay que esperar en la placa y recarga cada 2 s.
 
-Ese formulario **no redirige**. El submit es `fetch POST /connect` (JSON) y la
+Ese formulario **no redirige**. El submit es `fetch POST /connect` (`application/x-www-form-urlencoded` con `ssid`/`pass`, no JSON) y la
 misma pagina queda en carga: un JS pregunta `GET /status` hasta `up` o `fail`.
 `/status` lee `svc_wifi_link()`. El SoftAP no se apaga al primer `GOT_IP`: si
 se corta ahi, el celular pierde la pagina antes de ver el resultado. Lo baja

@@ -108,6 +108,8 @@ tensiones de bateria, VBUS y sistema. Todavia no hay logica de carga ni de apaga
 
 ## WiFi
 
+Contrato HTTP del companion (SoftAP + Fondo): [`docs/companion.md`](docs/companion.md).
+
 El servicio inicia WiFi en modo STA despues del primer frame. Al abrir la card **WiFi**
 del carrusel, ejecuta un scan asincrono y muestra hasta 16 redes cercanas, ordenadas por
 RSSI. Los SSID repetidos se consolidan y se conserva la senal mas fuerte; las protegidas
@@ -141,6 +143,8 @@ Por consola USB:
 wifi                            estado STA/SoftAP y ultimo scan
 wifiscan                        dispara un scan
 wifiprov <ssid>                 abre SoftAP + portal para ese SSID
+wifiprov allow                  acepta el cliente SoftAP (equivale a Si)
+wifiprov deny                   rechaza / echa el cliente SoftAP
 wificonnect <ssid> <pass>       conecta a una red con clave
 wifidisconnect                  corta el STA y borra la NVS wifi
 wifistop                        cierra el SoftAP
