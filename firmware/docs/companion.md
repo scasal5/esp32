@@ -100,13 +100,26 @@ curl -s -X POST http://192.168.4.1/connect \
 curl -s http://192.168.4.1/status
 ```
 
-Por consola USB (monitor en COM3), sin celular:
+Por consola USB (monitor en COM3), sin tocar Si en la placa:
 
 ```
 wifiprov MiRed
+# cuando el cliente asocie (o desde el harness):
+wifiprov allow
 wifi
-# ... aceptar cliente desde la UI, o probar el form en 192.168.4.1
+# denied:
+# wifiprov deny
 ```
+
+`wifiprov allow` / `wifiprov deny` llaman a `svc_wifi_prov_allow()` /
+`svc_wifi_prov_deny()` (mismo gate que el Si/No de la UI).
+
+### Lab · `CONFIG_WS183_PROV_AUTO_ALLOW`
+
+En `idf.py menuconfig` → **ws183-os** → **Lab: auto-allow SoftAP client**.
+Default **n**. Con **y**, al asociarse el primer cliente SoftAP se llama
+`svc_wifi_prov_allow()` solo (sin Si en la placa). **Solo lab/harness**; no
+usar en builds de produccion. El contrato HTTP (`form-urlencoded`) no cambia.
 
 ### Fondo
 

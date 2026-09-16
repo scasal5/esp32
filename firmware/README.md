@@ -143,6 +143,8 @@ Por consola USB:
 wifi                            estado STA/SoftAP y ultimo scan
 wifiscan                        dispara un scan
 wifiprov <ssid>                 abre SoftAP + portal para ese SSID
+wifiprov allow                  acepta el cliente SoftAP (equivale a Si)
+wifiprov deny                   rechaza / echa el cliente SoftAP
 wificonnect <ssid> <pass>       conecta a una red con clave
 wifidisconnect                  corta el STA y borra la NVS wifi
 wifistop                        cierra el SoftAP

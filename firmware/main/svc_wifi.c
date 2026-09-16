@@ -250,6 +250,10 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                  (unsigned)ev->aid);
         esp_event_post(SVC_WIFI_EVENT, SVC_WIFI_EVENT_PROV_CLIENT, &c,
                        sizeof(c), 0);
+#if CONFIG_WS183_PROV_AUTO_ALLOW
+        /* Lab/harness: saltea Si/No en la placa. No usar en produccion. */
+        svc_wifi_prov_allow();
+#endif
         return;
     }
 
@@ -817,8 +821,28 @@ static int cmd_wifiscan(int argc, char **argv)
 static int cmd_wifiprov(int argc, char **argv)
 {
     if (argc < 2) {
-        printf("uso: wifiprov <ssid>\n");
+        printf("uso: wifiprov <ssid>|allow|deny\n");
         return 1;
+    }
+    if (strcmp(argv[1], "allow") == 0) {
+        if (!s_prov_on) {
+            printf("wifiprov allow: SoftAP off\n");
+            return 1;
+        }
+        svc_wifi_prov_allow();
+        printf("wifiprov allow: pending=%d allowed=%d\n",
+               (int)s_prov_pending, (int)s_prov_allowed);
+        return s_prov_allowed ? 0 : 1;
+    }
+    if (strcmp(argv[1], "deny") == 0) {
+        if (!s_prov_on) {
+            printf("wifiprov deny: SoftAP off\n");
+            return 1;
+        }
+        svc_wifi_prov_deny();
+        printf("wifiprov deny: pending=%d allowed=%d\n",
+               (int)s_prov_pending, (int)s_prov_allowed);
+        return 0;
     }
     esp_err_t err = svc_wifi_prov_start(argv[1]);
     printf("wifiprov: %s ap=%s qr=%s\n", esp_err_to_name(err), s_ap_ssid, s_qr);
@@ -861,8 +885,8 @@ void svc_wifi_register_console(void)
           .func = &cmd_wifi },
         { .command = "wifiscan", .help = "Dispara un scan",
           .func = &cmd_wifiscan },
-        { .command = "wifiprov", .help = "Abre SoftAP+portal para un SSID",
-          .hint = "<ssid>", .func = &cmd_wifiprov },
+        { .command = "wifiprov", .help = "SoftAP+portal: <ssid>|allow|deny",
+          .hint = "<ssid>|allow|deny", .func = &cmd_wifiprov },
         { .command = "wificonnect", .help = "Conecta STA a una red con clave",
           .hint = "<ssid> <pass>", .func = &cmd_wificonnect },
         { .command = "wifidisconnect", .help = "Corta el STA y borra NVS wifi",
