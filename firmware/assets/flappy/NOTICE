@@ -7,7 +7,7 @@ Graphics (Kenney Tappy Plane) — Creative Commons Zero (CC0 1.0)
     planeYellow1.png planeYellow2.png planeYellow3.png
     rockGrass.png rockGrassDown.png
     groundGrass.png background.png (sky color sample only)
-  License text: LICENSE-Kenney-TappyPlane.txt
+  License text: LICENSE-kt.txt
 
 SFX (Kenney Digital Audio) — Creative Commons Zero (CC0 1.0)
   Source: https://kenney.nl/assets/digital-audio
@@ -16,7 +16,7 @@ SFX (Kenney Digital Audio) — Creative Commons Zero (CC0 1.0)
     score -> sfx/powerUp2.{ogg,wav}
     die   -> sfx/lowDown.{ogg,wav}
   WAV is 16 kHz mono PCM for a future ES8311 path.
-  License text: LICENSE-Kenney-DigitalAudio.txt
+  License text: LICENSE-ka.txt
 
 MegaCrash Flappy Bird Assets (CC0) — NOT included in this tree
   Intended pack: https://megacrash.itch.io/flappy-bird-assets
