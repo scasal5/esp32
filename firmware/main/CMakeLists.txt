@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "app_ajustes.c" "app_main.c" "app_menu.c" "board_rtc_pcf85063.c" "boot_splash.c"
+    SRCS "app_ajustes.c" "app_flappy.c" "app_main.c" "app_menu.c" "board_rtc_pcf85063.c" "boot_splash.c"
          "display.c" "fondo_http.c" "fondo_ui.c" "home_screen.c" "menu_button.c"
          "pm_axp2101.cpp" "pm_format.c" "shell.c"
          "splash_gif.c" "svc_wifi.c" "time_console.c" "wifi_portal.c" "wifi_scan_ui.c"

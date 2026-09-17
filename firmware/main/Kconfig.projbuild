@@ -25,6 +25,14 @@ menu "ws183-os"
             Apagarla saca la tarjeta y el handler de eventos de svc_wifi; el
             servicio de WiFi y los comandos de consola siguen andando.
 
+    config WS183_APP_FLAPPY
+        bool "App Flappy Bird"
+        default y
+        help
+            Tarjeta "Flappy Bird": clon jugable (gravedad, flap, tubos, puntaje).
+            Toque o BOOT = flap. Salir con doble toque en "Salir" (PWR/PEKEY
+            no se puede interceptar: apaga por el AXP2101).
+
     config WS183_APP_AJUSTES
         bool "App Ajustes"
         default y
