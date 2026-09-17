@@ -17,7 +17,7 @@ ESP_EVENT_DEFINE_BASE(UI_EVENT);
 
 static const char *TAG = "menu_button";
 
-#define BTN_MENU     GPIO_NUM_0   /* BOOT. PWR no tiene GPIO. */
+#define BTN_MENU     GPIO_NUM_0   /* BOOT. PWR short-press: GPIO41 (ver app_flappy). */
 #define DEBOUNCE_MS  40
 
 /* La task pasa casi todo el tiempo bloqueada. Prioridad por encima de la de

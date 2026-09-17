@@ -29,33 +29,9 @@ menu "ws183-os"
         bool "App Flappy Bird"
         default y
         help
-            Tarjeta "Flappy Bird": clon jugable (gravedad, flap, tubos, puntaje).
-            Toque o BOOT = flap. Salir con doble toque en "Salir" (PWR/PEKEY
-            no se puede interceptar: apaga por el AXP2101).
-
-    config WS183_APP_AJUSTES
-        bool "App Ajustes"
-        default y
-        help
-            Tarjeta "Ajustes" en el lanzador. Todavia no abre nada; la tarjeta
-            solo avisa que viene.
-
-    config WS183_COMPANION
-        bool "Companion (SoftAP portal + Fondo HTTP)"
-        default y
-        help
-            Portal SoftAP en 192.168.4.1 (GET /, GET /status, POST /connect
-            form-urlencoded) y HTTP de Fondo para subir splash.png/gif.
-            Apagarlo deshabilita ambas UIs HTTP del celular; STA, scan y el
-            resto del firmware siguen. Ver docs/companion.md.
-
-    config WS183_PROV_AUTO_ALLOW
-        bool "Lab: auto-allow SoftAP client (skip Si/No)"
-        depends on WS183_COMPANION
-        default n
-        help
-            Solo lab/harness. Cuando el primer cliente se asocia al SoftAP,
-            llama a svc_wifi_prov_allow() sin tocar Si en la placa. No usar
-            en builds de produccion. Ver docs/companion.md.
+            Clon clasico de Flappy Bird en el launcher.
+            Toque o BOOT = flap. Salir con doble short-press del PWR
+            (GPIO41 SYS_OUT; hold largo sigue apagando por PEKEY).
+            Graficos Yorokobi CC0; sin boton Salir on-screen.
 
 endmenu

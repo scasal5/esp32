@@ -3,13 +3,11 @@
 #include "shell.h"
 
 /*
- * Flappy Bird: clon jugable en el lanzador (id "flappy").
+ * Flappy Bird: clon jugable en el launcher (id "flappy").
  *
- * Graficos: Kenney Tappy Plane (CC0) embebidos como LVGL RGB565A8
- * (ave 34x28, tubo 52x115, suelo tile 48x71). Cielo = color solido.
- * SFX: Kenney Digital Audio (CC0) via flappy_sfx_play() stub (sin codec
- * path aun). Ver assets/flappy/NOTICE. No se usan packs propietarios
- * (samuelcust / Sounds Resource / etc.). MegaCrash itch CC0 pendiente
- * de zip legal (blocker documentado en NOTICE).
+ * Graficos: Yorokobi flappy_atlas (CC0) + grass_dirt (CC0), cielo #4EC0CA.
+ * SFX: Kenney Digital Audio (CC0) via flappy_sfx_play() stub.
+ * Salida: doble short-press del PWR (GPIO41 SYS_OUT). Sin boton Salir on-screen.
+ * Ver assets/flappy/NOTICE.
  */
 extern const os_app_t app_flappy;

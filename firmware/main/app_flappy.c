@@ -1,27 +1,23 @@
 /*
  * Flappy Bird — clon jugable para ws183-os (pantalla 240x284).
  *
- * Mecanica clasica: gravedad, flap, tubos, puntaje, game over + reinicio.
+ * Mecanica clasica: gravedad, flap, tubos verdes, suelo, puntaje, game over.
  *
  * Entrada:
  *   - Toque (CST816S) o BOOT/GPIO0 = flap / empezar / reiniciar.
  *   - Mientras la app esta abierta, BOOT no abre el menu del shell
  *     (shell_claim_boot). Al cerrar se restaura.
  *
- * Salida (boton de abajo):
- *   El PWR fisico es el PEKEY del AXP2101: apaga la placa en hardware y no
- *   tiene GPIO (menu_button.c: "PWR no tiene GPIO"; README: "PWR apaga por
- *   el AXP2101: el firmware no toca ese pin"). pm_axp2101.cpp es SOLO
- *   LECTURA a proposito (no se reconfigura PEKEY: tocar el PMU apaga rieles).
- *   Fallback: zona "Salir" abajo del suelo con el mismo UX de doble toque
- *   ("Salir? Presiona de nuevo" → shell_close_app). Sin acentos: las
- *   Montserrat de LVGL no traen glifos latinos extendidos.
+ * Salida (boton fisico ABAJO = PWR):
+ *   Short-press NO apaga (hard power-off solo con hold ~4-10s del PEKEY).
+ *   Deteccion via GPIO41 (SYS_OUT del PWR en Waveshare 1.83), debounce.
+ *   1er short-press -> overlay "Salir?\nPresiona de nuevo"
+ *   2o en ~2.5s -> shell_close_app()
+ *   Sin boton on-screen "Salir". No se escriben rieles del AXP2101.
  *
- * Sprites: Kenney Tappy Plane (CC0) como LVGL RGB565A8
- *   (assets/flappy/NOTICE). Cielo = color solido (no bitmap fullscreen).
- *   Bird 34x28, pipe 52x115, ground tile 48x71. SFX Kenney Digital Audio
- *   via flappy_sfx_play() stub (audio planeado). MegaCrash itch CC0
- *   bloqueado (login/\$0 payment); fallback Kenney-only.
+ * Graficos: Yorokobi flappy_atlas.png (CC0) upscale NN — pajaro / tubos /
+ *   suelo. Cielo #4EC0CA procedural. Ver assets/flappy/NOTICE.
+ *   SFX: Kenney Digital Audio (CC0) via flappy_sfx_play() stub.
  */
 
 #include "app_flappy.h"
@@ -39,6 +35,7 @@
 
 #include "bsp/display.h"
 #include "bsp/esp-bsp.h"
+#include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_random.h"
 
@@ -55,7 +52,7 @@ static const char *TAG = "flappy";
 
 #define PIPE_W         FLAPPY_PIPE_W
 #define PIPE_H         FLAPPY_PIPE_H
-#define PIPE_GAP       100
+#define PIPE_GAP       96
 
 #define LAND_H         FLAPPY_GROUND_H
 #define SKY_H          (SCR_H - LAND_H)
@@ -65,16 +62,16 @@ static const char *TAG = "flappy";
 #define PIPE_SPACING   144
 
 #define TICK_MS        33
-#define GRAVITY        0.28f
-#define FLAP_VY        (-4.6f)
-#define PIPE_VX        2.2f
+#define GRAVITY        0.35f
+#define FLAP_VY        (-5.8f)
+#define PIPE_VX        2.5f
 #define MAX_VY         8.0f
 #define ROT_MAX        45
 
 #define GROUND_TILES   ((SCR_W / FLAPPY_GROUND_TILE_W) + 2)
 
 /* Cielo solido muestreado de Kenney background.png (no RGBA fullscreen). */
-#define COL_SKY        lv_color_hex(0xD5ECF6) /* Kenney bg sample */
+#define COL_SKY        lv_color_hex(0x4EC0CA) /* classic Flappy cyan */
 #define COL_OVERLAY    lv_color_hex(0x000000)
 
 
@@ -103,7 +100,6 @@ static lv_obj_t *s_score_lbl;
 static lv_obj_t *s_hint_lbl;
 static lv_obj_t *s_overlay;
 static lv_obj_t *s_overlay_lbl;
-static lv_obj_t *s_exit_btn;
 static lv_timer_t *s_timer;
 
 static pipe_t s_pipes[MAX_PIPES];
@@ -114,9 +110,21 @@ static int s_score;
 static int s_best;
 static bool s_exit_armed;
 static uint32_t s_exit_armed_ms;
+static int s_pwr_stable;          /* last debounced level (1=released) */
+static int s_pwr_raw;             /* last raw sample */
+static uint32_t s_pwr_edge_ms;    /* when raw last changed */
+static bool s_pwr_inited;
+
 static bool s_boot_handler_on;
 
 #define EXIT_ARM_MS 2500
+
+/* Waveshare ESP32-S3-Touch-LCD-1.83: SYS_OUT del boton PWR -> GPIO41.
+ * Active-low con pull-up (igual que BOOT). Short-press = flanco a bajo.
+ * Hold largo sigue yendo al PEKEY del AXP2101 (hard power-off). */
+#define PWR_GPIO           GPIO_NUM_41
+#define PWR_DEBOUNCE_MS    40
+
 
 static const lv_image_dsc_t *const s_bird_frames[3] = {
     &flappy_bird_1,
@@ -331,9 +339,82 @@ static void do_flap(void)
     flappy_sfx_play(FLAPPY_SFX_FLAP);
 }
 
+
+static void pwr_init(void)
+{
+    if (s_pwr_inited) {
+        return;
+    }
+    const gpio_config_t io = {
+        .pin_bit_mask = 1ULL << PWR_GPIO,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    esp_err_t err = gpio_config(&io);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "GPIO41 PWR init fallo: %s", esp_err_to_name(err));
+        return;
+    }
+    s_pwr_raw = gpio_get_level(PWR_GPIO);
+    s_pwr_stable = s_pwr_raw;
+    s_pwr_edge_ms = lv_tick_get();
+    s_pwr_inited = true;
+    ESP_LOGI(TAG, "PWR short-press watch on GPIO%d (level=%d)", (int)PWR_GPIO, s_pwr_stable);
+}
+
+static void pwr_deinit(void)
+{
+    /* Dejar el pin como entrada pull-up; no hace falta resetear. */
+    s_pwr_inited = false;
+}
+
+/* true en flanco de short-press (released->pressed, active-low). */
+static bool pwr_poll_short_press(void)
+{
+    if (!s_pwr_inited) {
+        return false;
+    }
+    const int raw = gpio_get_level(PWR_GPIO);
+    const uint32_t now = lv_tick_get();
+    if (raw != s_pwr_raw) {
+        s_pwr_raw = raw;
+        s_pwr_edge_ms = now;
+        return false;
+    }
+    if ((int)(now - s_pwr_edge_ms) < PWR_DEBOUNCE_MS) {
+        return false;
+    }
+    if (raw == s_pwr_stable) {
+        return false;
+    }
+    const int prev = s_pwr_stable;
+    s_pwr_stable = raw;
+    /* active-low: press = 1 -> 0 */
+    return (prev == 1 && raw == 0);
+}
+
+static void handle_pwr_exit(void)
+{
+    if (!pwr_poll_short_press()) {
+        return;
+    }
+    if (!s_exit_armed) {
+        show_exit_overlay();
+        ESP_LOGI(TAG, "salida armada (PWR GPIO41 x1)");
+        return;
+    }
+    hide_exit_overlay();
+    ESP_LOGI(TAG, "salida confirmada (PWR GPIO41 x2)");
+    shell_close_app();
+}
+
 static void tick(lv_timer_t *timer)
 {
     LV_UNUSED(timer);
+
+    handle_pwr_exit();
 
     if (s_exit_armed && lv_tick_elaps(s_exit_armed_ms) > EXIT_ARM_MS) {
         hide_exit_overlay();
@@ -412,18 +493,6 @@ static void on_play_pressed(lv_event_t *e)
 {
     LV_UNUSED(e);
     do_flap();
-}
-
-static void on_exit_clicked(lv_event_t *e)
-{
-    LV_UNUSED(e);
-    if (!s_exit_armed) {
-        show_exit_overlay();
-        return;
-    }
-    hide_exit_overlay();
-    ESP_LOGI(TAG, "salida confirmada (fallback Salir on-screen)");
-    shell_close_app();
 }
 
 static void flap_async(void *arg)
@@ -514,25 +583,6 @@ static void build_ui(lv_obj_t *root)
     lv_label_set_text(s_overlay_lbl, "Salir?\nPresiona de nuevo");
     lv_obj_center(s_overlay_lbl);
 
-    /*
-     * Fallback del boton PWR (PEKEY): control on-screen abajo a la derecha.
-     * Doble toque = salir. Ver cabecera del archivo para la evidencia.
-     */
-    s_exit_btn = lv_button_create(root);
-    lv_obj_set_size(s_exit_btn, 72, 28);
-    lv_obj_align(s_exit_btn, LV_ALIGN_BOTTOM_RIGHT, -8, -10);
-    lv_obj_set_style_bg_color(s_exit_btn, UI_COL_SURFACE, 0);
-    lv_obj_set_style_bg_opa(s_exit_btn, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(s_exit_btn, 8, 0);
-    lv_obj_set_style_shadow_width(s_exit_btn, 0, 0);
-    lv_obj_set_style_border_width(s_exit_btn, 0, 0);
-    lv_obj_add_event_cb(s_exit_btn, on_exit_clicked, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *exit_lbl = lv_label_create(s_exit_btn);
-    lv_label_set_text(exit_lbl, "Salir");
-    lv_obj_set_style_text_font(exit_lbl, UI_FONT_BODY, 0);
-    lv_obj_set_style_text_color(exit_lbl, UI_COL_TEXT, 0);
-    lv_obj_center(exit_lbl);
 }
 
 static void flappy_open(lv_obj_t *root)
@@ -550,6 +600,7 @@ static void flappy_open(lv_obj_t *root)
     build_ui(root);
     reset_round(true);
 
+    pwr_init();
     shell_claim_boot(true);
     if (esp_event_handler_register(UI_EVENT, UI_EVENT_MENU, on_boot_event,
                                    NULL) == ESP_OK) {
@@ -559,7 +610,7 @@ static void flappy_open(lv_obj_t *root)
     }
 
     s_timer = lv_timer_create(tick, TICK_MS, NULL);
-    ESP_LOGI(TAG, "open (Kenney CC0 bird %dx%d pipe_w %d land_h %d)",
+    ESP_LOGI(TAG, "open (Yorokobi CC0 bird %dx%d pipe_w %d land_h %d)",
              BIRD_W, BIRD_H, PIPE_W, LAND_H);
 }
 
@@ -574,6 +625,7 @@ static void flappy_close(void)
         esp_event_handler_unregister(UI_EVENT, UI_EVENT_MENU, on_boot_event);
         s_boot_handler_on = false;
     }
+    pwr_deinit();
     shell_claim_boot(false);
 
     s_root = NULL;
@@ -584,7 +636,6 @@ static void flappy_close(void)
     s_hint_lbl = NULL;
     s_overlay = NULL;
     s_overlay_lbl = NULL;
-    s_exit_btn = NULL;
     memset(s_pipes, 0, sizeof(s_pipes));
 
     ESP_LOGI(TAG, "close (BOOT restaurado al shell)");
