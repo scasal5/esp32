@@ -43,7 +43,7 @@
 
 static const char *TAG = "flappy";
 
-/* --- Medidas (Kenney sprites escalados; gap clasico) -------------------- */
+/* --- Medidas (Yorokobi 16px x2; gap clasico jugable) ------------------- */
 #define SCR_W          240
 #define SCR_H          284
 
@@ -52,7 +52,7 @@ static const char *TAG = "flappy";
 
 #define PIPE_W         FLAPPY_PIPE_W
 #define PIPE_H         FLAPPY_PIPE_H
-#define PIPE_GAP       96
+#define PIPE_GAP       112
 
 #define LAND_H         FLAPPY_GROUND_H
 #define SKY_H          (SCR_H - LAND_H)
@@ -62,9 +62,9 @@ static const char *TAG = "flappy";
 #define PIPE_SPACING   144
 
 #define TICK_MS        33
-#define GRAVITY        0.35f
-#define FLAP_VY        (-5.8f)
-#define PIPE_VX        2.5f
+#define GRAVITY        0.32f
+#define FLAP_VY        (-5.2f)
+#define PIPE_VX        2.2f
 #define MAX_VY         8.0f
 #define ROT_MAX        45
 
@@ -271,13 +271,19 @@ static void reset_round(bool playing_hint)
 
 static bool bird_hits_pipe(const pipe_t *p)
 {
-    const float bx0 = (float)BIRD_X + 2.0f;
-    const float bx1 = (float)(BIRD_X + BIRD_W) - 2.0f;
-    const float by0 = s_bird_y + 2.0f;
-    const float by1 = s_bird_y + (float)BIRD_H - 2.0f;
+    /* Hitbox mas chica que el sprite (el atlas tiene margen transparente).
+     * Bird 32x32 → caja ~18x16. Tubos: inset lateral para no "comer" el gap. */
+    const float bird_inset_x = 7.0f;
+    const float bird_inset_y = 8.0f;
+    const float pipe_inset_x = 4.0f;
 
-    const float px0 = p->x;
-    const float px1 = p->x + (float)PIPE_W;
+    const float bx0 = (float)BIRD_X + bird_inset_x;
+    const float bx1 = (float)(BIRD_X + BIRD_W) - bird_inset_x;
+    const float by0 = s_bird_y + bird_inset_y;
+    const float by1 = s_bird_y + (float)BIRD_H - bird_inset_y;
+
+    const float px0 = p->x + pipe_inset_x;
+    const float px1 = p->x + (float)PIPE_W - pipe_inset_x;
     if (bx1 < px0 || bx0 > px1) {
         return false;
     }
@@ -450,8 +456,8 @@ static void tick(lv_timer_t *timer)
         s_bird_y = 0.0f;
         s_bird_vy = 0.0f;
     }
-    if (s_bird_y + (float)BIRD_H >= (float)SKY_H) {
-        s_bird_y = (float)(SKY_H - BIRD_H);
+    if (s_bird_y + (float)BIRD_H - 6.0f >= (float)SKY_H) {
+        s_bird_y = (float)(SKY_H - BIRD_H) + 6.0f;
         die();
         return;
     }

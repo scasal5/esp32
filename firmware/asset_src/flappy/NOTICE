@@ -19,3 +19,6 @@ NOT used:
 
 SPIFFS (firmware/assets/flappy/) keeps short-named sources + NOTICE only.
 Runtime sprites are compiled into firmware/main/flappy_img.c — not SPIFFS.
+
+Sprites re-exported with near-white (#FFF) chroma-keyed to alpha=0
+(no opaque white halo). Upscale NN x2 from 16px tiles.
