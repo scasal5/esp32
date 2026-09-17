@@ -1,0 +1,36 @@
+Flappy Bird assets (ws183-os)
+=============================
+
+Graphics (Kenney Tappy Plane) — Creative Commons Zero (CC0 1.0)
+  Source: https://kenney.nl/assets/tappy-plane
+  Files under png/:
+    planeYellow1.png planeYellow2.png planeYellow3.png
+    rockGrass.png rockGrassDown.png
+    groundGrass.png background.png (sky color sample only)
+  License text: LICENSE-Kenney-TappyPlane.txt
+
+SFX (Kenney Digital Audio) — Creative Commons Zero (CC0 1.0)
+  Source: https://kenney.nl/assets/digital-audio
+  Mapping:
+    flap  -> sfx/phaseJump1.{ogg,wav}
+    score -> sfx/powerUp2.{ogg,wav}
+    die   -> sfx/lowDown.{ogg,wav}
+  WAV is 16 kHz mono PCM for a future ES8311 path.
+  License text: LICENSE-Kenney-DigitalAudio.txt
+
+MegaCrash Flappy Bird Assets (CC0) — NOT included in this tree
+  Intended pack: https://megacrash.itch.io/flappy-bird-assets
+  Blocker (2026-09-17 ART): itch.io "name your own price" requires a
+  logged-in account / payment method even at $0.00. curl/wget and guest
+  POST return {"errors":["Please select a valid payment method"]}. No
+  direct zip URL. Tech Lead: drop MegaCrash sprites into png/ and re-run
+  scripts/flappy_assets_to_c.py when a legal zip is available.
+
+Intentionally NOT used (proprietary / rip packs):
+  samuelcust/flappy-bird-assets, npid7 SFX, Sounds Resource, NNBnh/flappybirdart
+
+Embed notes:
+  - LVGL RGB565A8 C arrays in main/flappy_img.c (not full-screen RGBA bg)
+  - Sky is solid color sampled from Kenney background.png
+  - Ground/pipes tiled/positioned; bird scaled to 34x28
+  - SFX blobs + flappy_sfx_play() stub in main/flappy_sfx.c (no codec yet)

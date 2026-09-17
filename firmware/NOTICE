@@ -46,3 +46,9 @@ Recursos graficos incluidos en este repositorio:
   Copyright (c) santi casals <santiago@casals.ar>
   Licencia: MIT
   https://casals.ar/assets/esp32.gif
+
+  firmware/assets/flappy/  (Kenney Tappy Plane + Kenney Digital Audio, CC0)
+  See firmware/assets/flappy/NOTICE for files, licenses, and the MegaCrash
+  itch.io download blocker. Generated LVGL arrays live in main/flappy_img.*
+  and main/flappy_sfx.*.
+

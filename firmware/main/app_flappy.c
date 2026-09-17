@@ -17,13 +17,17 @@
  *   ("Salir? Presiona de nuevo" → shell_close_app). Sin acentos: las
  *   Montserrat de LVGL no traen glifos latinos extendidos.
  *
- * Sprites: placeholders con medidas clasicas (atlas 2x tipico):
- *   bird 34x24, pipe width 52, land height 112, gap 100.
- *   Colores aproximados al dia clasico; listos para swap por assets OSS.
+ * Sprites: Kenney Tappy Plane (CC0) como LVGL RGB565A8
+ *   (assets/flappy/NOTICE). Cielo = color solido (no bitmap fullscreen).
+ *   Bird 34x28, pipe 52x115, ground tile 48x71. SFX Kenney Digital Audio
+ *   via flappy_sfx_play() stub (audio planeado). MegaCrash itch CC0
+ *   bloqueado (login/\$0 payment); fallback Kenney-only.
  */
 
 #include "app_flappy.h"
 
+#include "flappy_img.h"
+#include "flappy_sfx.h"
 #include "menu_button.h"
 #include "shell.h"
 #include "ui_theme.h"
@@ -42,23 +46,23 @@
 
 static const char *TAG = "flappy";
 
-/* --- Medidas clasicas (2x del atlas original ~17x12 / 26-wide) ---------- */
+/* --- Medidas (Kenney sprites escalados; gap clasico) -------------------- */
 #define SCR_W          240
 #define SCR_H          284
 
-#define BIRD_W         34
-#define BIRD_H         24
+#define BIRD_W         FLAPPY_BIRD_W
+#define BIRD_H         FLAPPY_BIRD_H
 
-#define PIPE_W         52
+#define PIPE_W         FLAPPY_PIPE_W
+#define PIPE_H         FLAPPY_PIPE_H
 #define PIPE_GAP       100
-#define PIPE_CAP_H     26   /* labio del tubo; placeholder del cap clasico */
 
-#define LAND_H         112
+#define LAND_H         FLAPPY_GROUND_H
 #define SKY_H          (SCR_H - LAND_H)
 
 #define BIRD_X         56
 #define MAX_PIPES      3
-#define PIPE_SPACING   144  /* distancia horizontal entre pares */
+#define PIPE_SPACING   144
 
 #define TICK_MS        33
 #define GRAVITY        0.28f
@@ -67,16 +71,12 @@ static const char *TAG = "flappy";
 #define MAX_VY         8.0f
 #define ROT_MAX        45
 
-/* Colores placeholder (dia clasico, no assets propietarios). */
-#define COL_SKY        lv_color_hex(0x4EC0CA)
-#define COL_LAND       lv_color_hex(0xDED895)
-#define COL_LAND_EDGE  lv_color_hex(0xD2B456)
-#define COL_PIPE       lv_color_hex(0x73BF2E)
-#define COL_PIPE_EDGE  lv_color_hex(0x558F1F)
-#define COL_BIRD       lv_color_hex(0xF8C82E)
-#define COL_BIRD_BEAK  lv_color_hex(0xE86101)
-#define COL_BIRD_EYE   lv_color_hex(0xFFFFFF)
+#define GROUND_TILES   ((SCR_W / FLAPPY_GROUND_TILE_W) + 2)
+
+/* Cielo solido muestreado de Kenney background.png (no RGBA fullscreen). */
+#define COL_SKY        lv_color_hex(0xD5ECF6) /* Kenney bg sample */
 #define COL_OVERLAY    lv_color_hex(0x000000)
+
 
 typedef enum {
     ST_READY = 0,
@@ -89,18 +89,16 @@ typedef struct {
     int gap_y;     /* centro del hueco en Y */
     bool scored;
     lv_obj_t *top;
-    lv_obj_t *top_cap;
     lv_obj_t *bot;
-    lv_obj_t *bot_cap;
 } pipe_t;
 
 static lv_obj_t *s_root;
 static lv_obj_t *s_sky;
-static lv_obj_t *s_land;
-static lv_obj_t *s_land_stripe;
+static lv_obj_t *s_land_tiles[GROUND_TILES];
+static float s_land_scroll;
 static lv_obj_t *s_bird;
-static lv_obj_t *s_beak;
-static lv_obj_t *s_eye;
+static int s_bird_frame;
+static uint32_t s_bird_frame_ms;
 static lv_obj_t *s_score_lbl;
 static lv_obj_t *s_hint_lbl;
 static lv_obj_t *s_overlay;
@@ -119,6 +117,12 @@ static uint32_t s_exit_armed_ms;
 static bool s_boot_handler_on;
 
 #define EXIT_ARM_MS 2500
+
+static const lv_image_dsc_t *const s_bird_frames[3] = {
+    &flappy_bird_1,
+    &flappy_bird_2,
+    &flappy_bird_3,
+};
 
 /* --- Util -------------------------------------------------------------- */
 
@@ -140,63 +144,16 @@ static void set_pipe_objs(pipe_t *p)
     const int gap_bot = p->gap_y + PIPE_GAP / 2;
     const int x = (int)p->x;
 
-    /* Tubo superior: desde y=0 hasta gap_top. */
-    int top_h = gap_top;
-    if (top_h < 0) {
-        top_h = 0;
-    }
-    lv_obj_set_size(p->top, PIPE_W, top_h > 0 ? top_h : 1);
-    lv_obj_set_pos(p->top, x, 0);
-    if (top_h <= 0) {
-        lv_obj_add_flag(p->top, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(p->top_cap, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_remove_flag(p->top, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(p->top_cap, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_size(p->top_cap, PIPE_W + 4, PIPE_CAP_H);
-        lv_obj_set_pos(p->top_cap, x - 2, gap_top - PIPE_CAP_H);
-    }
-
-    /* Tubo inferior: desde gap_bot hasta el suelo. */
-    int bot_h = SKY_H - gap_bot;
-    if (bot_h < 0) {
-        bot_h = 0;
-    }
-    lv_obj_set_size(p->bot, PIPE_W, bot_h > 0 ? bot_h : 1);
+    /* Roca superior: punta en gap_top (imagen cuelga hacia arriba). */
+    lv_obj_set_pos(p->top, x, gap_top - PIPE_H);
+    /* Roca inferior: punta en gap_bot. */
     lv_obj_set_pos(p->bot, x, gap_bot);
-    if (bot_h <= 0) {
-        lv_obj_add_flag(p->bot, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(p->bot_cap, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_remove_flag(p->bot, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(p->bot_cap, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_size(p->bot_cap, PIPE_W + 4, PIPE_CAP_H);
-        lv_obj_set_pos(p->bot_cap, x - 2, gap_bot);
-    }
 }
 
-static lv_obj_t *make_pipe_body(lv_obj_t *parent)
+static lv_obj_t *make_pipe_img(lv_obj_t *parent, const lv_image_dsc_t *src)
 {
-    lv_obj_t *o = lv_obj_create(parent);
-    lv_obj_remove_style_all(o);
-    lv_obj_set_style_bg_color(o, COL_PIPE, 0);
-    lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(o, 2, 0);
-    lv_obj_set_style_border_color(o, COL_PIPE_EDGE, 0);
-    lv_obj_set_style_radius(o, 0, 0);
-    lv_obj_remove_flag(o, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    return o;
-}
-
-static lv_obj_t *make_pipe_cap(lv_obj_t *parent)
-{
-    lv_obj_t *o = lv_obj_create(parent);
-    lv_obj_remove_style_all(o);
-    lv_obj_set_style_bg_color(o, COL_PIPE, 0);
-    lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(o, 2, 0);
-    lv_obj_set_style_border_color(o, COL_PIPE_EDGE, 0);
-    lv_obj_set_style_radius(o, 4, 0);
+    lv_obj_t *o = lv_image_create(parent);
+    lv_image_set_src(o, src);
     lv_obj_remove_flag(o, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     return o;
 }
@@ -233,13 +190,24 @@ static void show_exit_overlay(void)
     }
 }
 
+static void set_bird_frame(int frame)
+{
+    if (frame < 0) {
+        frame = 0;
+    }
+    if (frame > 2) {
+        frame = 2;
+    }
+    s_bird_frame = frame;
+    if (s_bird != NULL) {
+        lv_image_set_src(s_bird, s_bird_frames[s_bird_frame]);
+    }
+}
+
 static void place_bird(void)
 {
     const int y = (int)s_bird_y;
     lv_obj_set_pos(s_bird, BIRD_X, y);
-    /* Pico y ojo relativos al cuerpo 34x24. */
-    lv_obj_set_pos(s_beak, BIRD_X + BIRD_W - 6, y + BIRD_H / 2 - 3);
-    lv_obj_set_pos(s_eye, BIRD_X + 20, y + 5);
 
     int rot = (int)(s_bird_vy * 6.0f);
     if (rot > ROT_MAX) {
@@ -248,7 +216,17 @@ static void place_bird(void)
     if (rot < -ROT_MAX) {
         rot = -ROT_MAX;
     }
-    lv_obj_set_style_transform_rotation(s_bird, rot * 10, 0); /* 0.1 deg units */
+    /* LVGL image rotation is 0.1 deg units. */
+    lv_image_set_rotation(s_bird, rot * 10);
+}
+
+static void place_ground(void)
+{
+    const int base = (int)s_land_scroll;
+    for (int i = 0; i < GROUND_TILES; i++) {
+        int x = i * FLAPPY_GROUND_TILE_W - (base % FLAPPY_GROUND_TILE_W);
+        lv_obj_set_pos(s_land_tiles[i], x, SKY_H);
+    }
 }
 
 static void reset_pipes(void)
@@ -267,9 +245,13 @@ static void reset_round(bool playing_hint)
     s_bird_y = (float)(SKY_H / 2 - BIRD_H / 2);
     s_bird_vy = 0.0f;
     s_score = 0;
+    s_land_scroll = 0.0f;
+    s_bird_frame_ms = lv_tick_get();
     hide_exit_overlay();
     reset_pipes();
+    set_bird_frame(0);
     place_bird();
+    place_ground();
     update_score_lbl();
     if (s_hint_lbl != NULL) {
         lv_label_set_text(s_hint_lbl,
@@ -314,6 +296,7 @@ static void die(void)
         lv_label_set_text(s_hint_lbl, "Game over — toca para reiniciar");
         lv_obj_remove_flag(s_hint_lbl, LV_OBJ_FLAG_HIDDEN);
     }
+    flappy_sfx_play(FLAPPY_SFX_DIE);
     ESP_LOGI(TAG, "game over score=%d best=%d", s_score, s_best);
 }
 
@@ -330,6 +313,8 @@ static void do_flap(void)
             lv_obj_add_flag(s_hint_lbl, LV_OBJ_FLAG_HIDDEN);
         }
         s_bird_vy = FLAP_VY;
+        set_bird_frame(1);
+        flappy_sfx_play(FLAPPY_SFX_FLAP);
         return;
     }
 
@@ -341,6 +326,9 @@ static void do_flap(void)
     }
 
     s_bird_vy = FLAP_VY;
+    set_bird_frame(1);
+    s_bird_frame_ms = lv_tick_get();
+    flappy_sfx_play(FLAPPY_SFX_FLAP);
 }
 
 static void tick(lv_timer_t *timer)
@@ -352,13 +340,22 @@ static void tick(lv_timer_t *timer)
     }
 
     if (s_state != ST_PLAY) {
-        /* Idle bobbing en READY. */
+        /* Idle bobbing + aleteo en READY. */
         if (s_state == ST_READY) {
             s_bird_y = (float)(SKY_H / 2 - BIRD_H / 2) +
                        3.0f * sinf((float)lv_tick_get() / 200.0f);
+            if (lv_tick_elaps(s_bird_frame_ms) > 120) {
+                s_bird_frame_ms = lv_tick_get();
+                set_bird_frame((s_bird_frame + 1) % 3);
+            }
             place_bird();
         }
         return;
+    }
+
+    if (lv_tick_elaps(s_bird_frame_ms) > 80) {
+        s_bird_frame_ms = lv_tick_get();
+        set_bird_frame((s_bird_frame + 1) % 3);
     }
 
     s_bird_vy += GRAVITY;
@@ -377,6 +374,9 @@ static void tick(lv_timer_t *timer)
         die();
         return;
     }
+
+    s_land_scroll += PIPE_VX;
+    place_ground();
 
     for (int i = 0; i < MAX_PIPES; i++) {
         pipe_t *p = &s_pipes[i];
@@ -398,6 +398,7 @@ static void tick(lv_timer_t *timer)
             p->scored = true;
             s_score++;
             update_score_lbl();
+            flappy_sfx_play(FLAPPY_SFX_SCORE);
         }
 
         if (bird_hits_pipe(p)) {
@@ -460,59 +461,27 @@ static void build_ui(lv_obj_t *root)
     lv_obj_remove_flag(s_sky, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(s_sky, on_play_pressed, LV_EVENT_PRESSED, NULL);
 
-    /* Tubos detras del pajaro */
+    /* Tubos (rocas Kenney) detras del pajaro */
     for (int i = 0; i < MAX_PIPES; i++) {
-        s_pipes[i].top = make_pipe_body(root);
-        s_pipes[i].bot = make_pipe_body(root);
-        s_pipes[i].top_cap = make_pipe_cap(root);
-        s_pipes[i].bot_cap = make_pipe_cap(root);
+        s_pipes[i].top = make_pipe_img(root, &flappy_pipe_top);
+        s_pipes[i].bot = make_pipe_img(root, &flappy_pipe_bot);
     }
 
-    /* Suelo clasico 112 px de alto */
-    s_land = lv_obj_create(root);
-    lv_obj_remove_style_all(s_land);
-    lv_obj_set_size(s_land, SCR_W, LAND_H);
-    lv_obj_set_pos(s_land, 0, SKY_H);
-    lv_obj_set_style_bg_color(s_land, COL_LAND, 0);
-    lv_obj_set_style_bg_opa(s_land, LV_OPA_COVER, 0);
-    lv_obj_remove_flag(s_land, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(s_land, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(s_land, on_play_pressed, LV_EVENT_PRESSED, NULL);
+    /* Suelo mosaico Kenney (tileable) */
+    for (int i = 0; i < GROUND_TILES; i++) {
+        s_land_tiles[i] = lv_image_create(root);
+        lv_image_set_src(s_land_tiles[i], &flappy_ground);
+        lv_obj_add_flag(s_land_tiles[i], LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_remove_flag(s_land_tiles[i], LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_event_cb(s_land_tiles[i], on_play_pressed, LV_EVENT_PRESSED,
+                            NULL);
+    }
 
-    s_land_stripe = lv_obj_create(root);
-    lv_obj_remove_style_all(s_land_stripe);
-    lv_obj_set_size(s_land_stripe, SCR_W, 6);
-    lv_obj_set_pos(s_land_stripe, 0, SKY_H);
-    lv_obj_set_style_bg_color(s_land_stripe, COL_LAND_EDGE, 0);
-    lv_obj_set_style_bg_opa(s_land_stripe, LV_OPA_COVER, 0);
-    lv_obj_remove_flag(s_land_stripe, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-
-    /* Ave 34x24 + pico/ojo placeholder */
-    s_bird = lv_obj_create(root);
-    lv_obj_remove_style_all(s_bird);
-    lv_obj_set_size(s_bird, BIRD_W, BIRD_H);
-    lv_obj_set_style_bg_color(s_bird, COL_BIRD, 0);
-    lv_obj_set_style_bg_opa(s_bird, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(s_bird, LV_RADIUS_CIRCLE, 0);
+    /* Ave: 3 frames planeYellow */
+    s_bird = lv_image_create(root);
+    lv_image_set_src(s_bird, &flappy_bird_1);
     lv_obj_remove_flag(s_bird, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_transform_pivot_x(s_bird, BIRD_W / 2, 0);
-    lv_obj_set_style_transform_pivot_y(s_bird, BIRD_H / 2, 0);
-
-    s_beak = lv_obj_create(root);
-    lv_obj_remove_style_all(s_beak);
-    lv_obj_set_size(s_beak, 8, 6);
-    lv_obj_set_style_bg_color(s_beak, COL_BIRD_BEAK, 0);
-    lv_obj_set_style_bg_opa(s_beak, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(s_beak, 2, 0);
-    lv_obj_remove_flag(s_beak, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-
-    s_eye = lv_obj_create(root);
-    lv_obj_remove_style_all(s_eye);
-    lv_obj_set_size(s_eye, 6, 6);
-    lv_obj_set_style_bg_color(s_eye, COL_BIRD_EYE, 0);
-    lv_obj_set_style_bg_opa(s_eye, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(s_eye, LV_RADIUS_CIRCLE, 0);
-    lv_obj_remove_flag(s_eye, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_image_set_pivot(s_bird, BIRD_W / 2, BIRD_H / 2);
 
     s_score_lbl = lv_label_create(root);
     lv_obj_set_style_text_font(s_score_lbl, UI_FONT_DISPLAY, 0);
@@ -569,10 +538,13 @@ static void build_ui(lv_obj_t *root)
 static void flappy_open(lv_obj_t *root)
 {
     memset(s_pipes, 0, sizeof(s_pipes));
+    memset(s_land_tiles, 0, sizeof(s_land_tiles));
     s_timer = NULL;
     s_boot_handler_on = false;
     s_exit_armed = false;
     s_best = 0;
+    s_land_scroll = 0.0f;
+    s_bird_frame = 0;
 
     /* Fondo del root lo pinta el shell; aca lo cubrimos con el cielo/suelo. */
     build_ui(root);
@@ -587,7 +559,7 @@ static void flappy_open(lv_obj_t *root)
     }
 
     s_timer = lv_timer_create(tick, TICK_MS, NULL);
-    ESP_LOGI(TAG, "open (placeholders bird %dx%d pipe_w %d land_h %d)",
+    ESP_LOGI(TAG, "open (Kenney CC0 bird %dx%d pipe_w %d land_h %d)",
              BIRD_W, BIRD_H, PIPE_W, LAND_H);
 }
 
@@ -606,11 +578,8 @@ static void flappy_close(void)
 
     s_root = NULL;
     s_sky = NULL;
-    s_land = NULL;
-    s_land_stripe = NULL;
+    memset(s_land_tiles, 0, sizeof(s_land_tiles));
     s_bird = NULL;
-    s_beak = NULL;
-    s_eye = NULL;
     s_score_lbl = NULL;
     s_hint_lbl = NULL;
     s_overlay = NULL;
