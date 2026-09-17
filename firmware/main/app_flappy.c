@@ -16,7 +16,8 @@
  *   Sin boton on-screen "Salir". No se escriben rieles del AXP2101.
  *
  * Graficos: Yorokobi flappy_atlas.png (CC0) upscale NN — pajaro / tubos /
- *   suelo. Cielo #4EC0CA procedural. Ver assets/flappy/NOTICE.
+ *   suelo opaco. Cielo #4EC0CA. Layout v4: HUD arriba, pipes clippeados,
+ *   Game Over alto contraste, suelo seamless. Ver assets/flappy/NOTICE.
  *   SFX: Kenney Digital Audio (CC0) via flappy_sfx_play() stub.
  */
 
@@ -56,6 +57,9 @@ static const char *TAG = "flappy";
 
 #define LAND_H         FLAPPY_GROUND_H
 #define SKY_H          (SCR_H - LAND_H)
+#define HUD_H          40  /* banda superior: score siempre visible */
+#define PLAY_Y0        HUD_H
+#define PLAY_H         (SKY_H - HUD_H)
 
 #define BIRD_X         56
 #define MAX_PIPES      3
@@ -72,7 +76,6 @@ static const char *TAG = "flappy";
 
 /* Cielo solido muestreado de Kenney background.png (no RGBA fullscreen). */
 #define COL_SKY        lv_color_hex(0x4EC0CA) /* classic Flappy cyan */
-#define COL_OVERLAY    lv_color_hex(0x000000)
 
 
 typedef enum {
@@ -91,7 +94,11 @@ typedef struct {
 
 static lv_obj_t *s_root;
 static lv_obj_t *s_sky;
+static lv_obj_t *s_play;           /* clip de tubos: y=HUD_H..SKY_H */
+static lv_obj_t *s_land_fill;      /* franja opaca bajo el mosaico */
 static lv_obj_t *s_land_tiles[GROUND_TILES];
+static lv_obj_t *s_go_panel;
+static lv_obj_t *s_go_lbl;
 static float s_land_scroll;
 static lv_obj_t *s_bird;
 static int s_bird_frame;
@@ -136,12 +143,12 @@ static const lv_image_dsc_t *const s_bird_frames[3] = {
 
 static int rand_gap_y(void)
 {
-    /* Hueco centrado con margen respecto al cielo y al suelo. */
+    /* Hueco en la zona jugable (bajo el HUD, sobre el suelo). */
     const int margin = PIPE_GAP / 2 + 8;
-    const int lo = margin;
+    const int lo = PLAY_Y0 + margin;
     const int hi = SKY_H - margin;
     if (hi <= lo) {
-        return SKY_H / 2;
+        return PLAY_Y0 + PLAY_H / 2;
     }
     return lo + (int)(esp_random() % (uint32_t)(hi - lo + 1));
 }
@@ -151,11 +158,9 @@ static void set_pipe_objs(pipe_t *p)
     const int gap_top = p->gap_y - PIPE_GAP / 2;
     const int gap_bot = p->gap_y + PIPE_GAP / 2;
     const int x = (int)p->x;
-
-    /* Roca superior: punta en gap_top (imagen cuelga hacia arriba). */
-    lv_obj_set_pos(p->top, x, gap_top - PIPE_H);
-    /* Roca inferior: punta en gap_bot. */
-    lv_obj_set_pos(p->bot, x, gap_bot);
+    /* Coords relativas al layer s_play (y=0 => PLAY_Y0 en pantalla). */
+    lv_obj_set_pos(p->top, x, (gap_top - PIPE_H) - PLAY_Y0);
+    lv_obj_set_pos(p->bot, x, gap_bot - PLAY_Y0);
 }
 
 static lv_obj_t *make_pipe_img(lv_obj_t *parent, const lv_image_dsc_t *src)
@@ -230,9 +235,14 @@ static void place_bird(void)
 
 static void place_ground(void)
 {
-    const int base = (int)s_land_scroll;
+    /* Scroll seamless: offset en [0, TILE_W). Tiles cubren -TILE_W .. SCR_W. */
+    const int tile = FLAPPY_GROUND_TILE_W;
+    int off = (int)s_land_scroll % tile;
+    if (off < 0) {
+        off += tile;
+    }
     for (int i = 0; i < GROUND_TILES; i++) {
-        int x = i * FLAPPY_GROUND_TILE_W - (base % FLAPPY_GROUND_TILE_W);
+        const int x = i * tile - off;
         lv_obj_set_pos(s_land_tiles[i], x, SKY_H);
     }
 }
@@ -256,6 +266,9 @@ static void reset_round(bool playing_hint)
     s_land_scroll = 0.0f;
     s_bird_frame_ms = lv_tick_get();
     hide_exit_overlay();
+    if (s_go_panel != NULL) {
+        lv_obj_add_flag(s_go_panel, LV_OBJ_FLAG_HIDDEN);
+    }
     reset_pipes();
     set_bird_frame(0);
     place_bird();
@@ -307,8 +320,18 @@ static void die(void)
     }
     update_score_lbl();
     if (s_hint_lbl != NULL) {
-        lv_label_set_text(s_hint_lbl, "Game over — toca para reiniciar");
-        lv_obj_remove_flag(s_hint_lbl, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_hint_lbl, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_go_lbl != NULL) {
+        char buf[64];
+        snprintf(buf, sizeof(buf),
+                 "GAME OVER\n%d  mejor %d\nToca para reiniciar",
+                 s_score, s_best);
+        lv_label_set_text(s_go_lbl, buf);
+    }
+    if (s_go_panel != NULL) {
+        lv_obj_remove_flag(s_go_panel, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(s_go_panel);
     }
     flappy_sfx_play(FLAPPY_SFX_DIE);
     ESP_LOGI(TAG, "game over score=%d best=%d", s_score, s_best);
@@ -421,6 +444,15 @@ static void tick(lv_timer_t *timer)
     LV_UNUSED(timer);
 
     handle_pwr_exit();
+    if (s_score_lbl != NULL) {
+        lv_obj_move_foreground(s_score_lbl);
+    }
+    if (s_overlay != NULL && !lv_obj_has_flag(s_overlay, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_move_foreground(s_overlay);
+    }
+    if (s_go_panel != NULL && !lv_obj_has_flag(s_go_panel, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_move_foreground(s_go_panel);
+    }
 
     if (s_exit_armed && lv_tick_elaps(s_exit_armed_ms) > EXIT_ARM_MS) {
         hide_exit_overlay();
@@ -525,10 +557,10 @@ static void build_ui(lv_obj_t *root)
 {
     s_root = root;
 
-    /* Cielo */
+    /* Fondo cielo a pantalla completa (bajo el suelo tambien queda cyan). */
     s_sky = lv_obj_create(root);
     lv_obj_remove_style_all(s_sky);
-    lv_obj_set_size(s_sky, SCR_W, SKY_H);
+    lv_obj_set_size(s_sky, SCR_W, SCR_H);
     lv_obj_set_pos(s_sky, 0, 0);
     lv_obj_set_style_bg_color(s_sky, COL_SKY, 0);
     lv_obj_set_style_bg_opa(s_sky, LV_OPA_COVER, 0);
@@ -536,13 +568,31 @@ static void build_ui(lv_obj_t *root)
     lv_obj_remove_flag(s_sky, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(s_sky, on_play_pressed, LV_EVENT_PRESSED, NULL);
 
-    /* Tubos (rocas Kenney) detras del pajaro */
+    /* Layer de tubos: clip estricto a la zona jugable (bajo HUD, sobre suelo). */
+    s_play = lv_obj_create(root);
+    lv_obj_remove_style_all(s_play);
+    lv_obj_set_size(s_play, SCR_W, PLAY_H);
+    lv_obj_set_pos(s_play, 0, PLAY_Y0);
+    lv_obj_set_style_bg_opa(s_play, LV_OPA_TRANSP, 0);
+    lv_obj_remove_flag(s_play, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    /* Sin OVERFLOW_VISIBLE: el padre clippea tubos que salen del playfield. */
+
     for (int i = 0; i < MAX_PIPES; i++) {
-        s_pipes[i].top = make_pipe_img(root, &flappy_pipe_top);
-        s_pipes[i].bot = make_pipe_img(root, &flappy_pipe_bot);
+        s_pipes[i].top = make_pipe_img(s_play, &flappy_pipe_top);
+        s_pipes[i].bot = make_pipe_img(s_play, &flappy_pipe_bot);
     }
 
-    /* Suelo mosaico Kenney (tileable) */
+    /* Suelo: relleno opaco + mosaico seamless (cubre pies de tubos). */
+    s_land_fill = lv_obj_create(root);
+    lv_obj_remove_style_all(s_land_fill);
+    lv_obj_set_size(s_land_fill, SCR_W, LAND_H);
+    lv_obj_set_pos(s_land_fill, 0, SKY_H);
+    lv_obj_set_style_bg_color(s_land_fill, lv_color_hex(0xC29C48), 0);
+    lv_obj_set_style_bg_opa(s_land_fill, LV_OPA_COVER, 0);
+    lv_obj_remove_flag(s_land_fill, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_land_fill, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(s_land_fill, on_play_pressed, LV_EVENT_PRESSED, NULL);
+
     for (int i = 0; i < GROUND_TILES; i++) {
         s_land_tiles[i] = lv_image_create(root);
         lv_image_set_src(s_land_tiles[i], &flappy_ground);
@@ -552,43 +602,74 @@ static void build_ui(lv_obj_t *root)
                             NULL);
     }
 
-    /* Ave: 3 frames planeYellow */
+    /* Ave sobre tubos/suelo. */
     s_bird = lv_image_create(root);
     lv_image_set_src(s_bird, &flappy_bird_1);
     lv_obj_remove_flag(s_bird, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_image_set_pivot(s_bird, BIRD_W / 2, BIRD_H / 2);
 
+    /* HUD score: tipografia grande + sombra para contraste sobre el cielo. */
     s_score_lbl = lv_label_create(root);
     lv_obj_set_style_text_font(s_score_lbl, UI_FONT_DISPLAY, 0);
-    lv_obj_set_style_text_color(s_score_lbl, UI_COL_TEXT, 0);
-    lv_obj_align(s_score_lbl, LV_ALIGN_TOP_MID, 0, 8);
+    lv_obj_set_style_text_color(s_score_lbl, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_opa(s_score_lbl, LV_OPA_COVER, 0);
+    lv_obj_set_style_shadow_color(s_score_lbl, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_shadow_opa(s_score_lbl, LV_OPA_60, 0);
+    lv_obj_set_style_shadow_ofs_x(s_score_lbl, 1, 0);
+    lv_obj_set_style_shadow_ofs_y(s_score_lbl, 1, 0);
+    lv_obj_set_style_shadow_width(s_score_lbl, 2, 0);
+    lv_obj_align(s_score_lbl, LV_ALIGN_TOP_MID, 0, 4);
     lv_label_set_text(s_score_lbl, "0");
 
     s_hint_lbl = lv_label_create(root);
     lv_obj_set_style_text_font(s_hint_lbl, UI_FONT_BODY, 0);
-    lv_obj_set_style_text_color(s_hint_lbl, UI_COL_TEXT, 0);
+    lv_obj_set_style_text_color(s_hint_lbl, lv_color_hex(0xFFFFFF), 0);
     lv_obj_set_style_text_align(s_hint_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_shadow_color(s_hint_lbl, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_shadow_opa(s_hint_lbl, LV_OPA_50, 0);
+    lv_obj_set_style_shadow_width(s_hint_lbl, 2, 0);
     lv_obj_align(s_hint_lbl, LV_ALIGN_CENTER, 0, -20);
     lv_label_set_text(s_hint_lbl, "Toca o BOOT para volar");
 
-    /* Overlay de confirmacion de salida */
+    /* Game Over: panel opaco alto contraste (no label suelto). */
+    s_go_panel = lv_obj_create(root);
+    lv_obj_remove_style_all(s_go_panel);
+    lv_obj_set_size(s_go_panel, SCR_W - 32, 96);
+    lv_obj_align(s_go_panel, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_color(s_go_panel, lv_color_hex(0x1A1A1A), 0);
+    lv_obj_set_style_bg_opa(s_go_panel, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(s_go_panel, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_border_width(s_go_panel, 2, 0);
+    lv_obj_set_style_radius(s_go_panel, 8, 0);
+    lv_obj_add_flag(s_go_panel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(s_go_panel, LV_OBJ_FLAG_SCROLLABLE);
+
+    s_go_lbl = lv_label_create(s_go_panel);
+    lv_obj_set_style_text_font(s_go_lbl, UI_FONT_BODY, 0);
+    lv_obj_set_style_text_color(s_go_lbl, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_align(s_go_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(s_go_lbl, "GAME OVER");
+    lv_obj_center(s_go_lbl);
+
+    /* Overlay confirmacion salida PWR (mismo contraste). */
     s_overlay = lv_obj_create(root);
     lv_obj_remove_style_all(s_overlay);
     lv_obj_set_size(s_overlay, SCR_W - 40, 72);
     lv_obj_align(s_overlay, LV_ALIGN_CENTER, 0, 10);
-    lv_obj_set_style_bg_color(s_overlay, COL_OVERLAY, 0);
-    lv_obj_set_style_bg_opa(s_overlay, LV_OPA_80, 0);
-    lv_obj_set_style_radius(s_overlay, UI_RADIUS, 0);
+    lv_obj_set_style_bg_color(s_overlay, lv_color_hex(0x1A1A1A), 0);
+    lv_obj_set_style_bg_opa(s_overlay, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(s_overlay, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_border_width(s_overlay, 2, 0);
+    lv_obj_set_style_radius(s_overlay, 8, 0);
     lv_obj_add_flag(s_overlay, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(s_overlay, LV_OBJ_FLAG_SCROLLABLE);
 
     s_overlay_lbl = lv_label_create(s_overlay);
     lv_obj_set_style_text_font(s_overlay_lbl, UI_FONT_BODY, 0);
-    lv_obj_set_style_text_color(s_overlay_lbl, UI_COL_TEXT, 0);
+    lv_obj_set_style_text_color(s_overlay_lbl, lv_color_hex(0xFFFFFF), 0);
     lv_obj_set_style_text_align(s_overlay_lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(s_overlay_lbl, "Salir?\nPresiona de nuevo");
     lv_obj_center(s_overlay_lbl);
-
 }
 
 static void flappy_open(lv_obj_t *root)
@@ -636,6 +717,10 @@ static void flappy_close(void)
 
     s_root = NULL;
     s_sky = NULL;
+    s_play = NULL;
+    s_land_fill = NULL;
+    s_go_panel = NULL;
+    s_go_lbl = NULL;
     memset(s_land_tiles, 0, sizeof(s_land_tiles));
     s_bird = NULL;
     s_score_lbl = NULL;

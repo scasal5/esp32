@@ -1,4 +1,4 @@
-/* Auto-generated Yorokobi CC0 flappy sprites (white keyed to alpha). */
+/* Auto-generated Yorokobi CC0 flappy sprites (white keyed; ground opaque). */
 #pragma once
 #include "lvgl.h"
 
