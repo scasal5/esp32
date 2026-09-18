@@ -88,6 +88,8 @@ static void owner(void *arg) {
     ESP_ERROR_CHECK(ws_clock_start());
     unsigned scenario=0;uint32_t ticks=0,smoke_end=0,run_ticks=0;
     int64_t start=esp_timer_get_time(),next_memory=start+10000000,soak_end=0,next_reconnect=0;
+    const int64_t init_complete_us=start;
+    bool measurement_ready=false;
     uint32_t last_input_seq=0;
     int64_t pending_irq=0,pending_poll=0;
     for(;;){
@@ -127,6 +129,10 @@ static void owner(void *arg) {
         }
         ws_metrics_add(&m);ticks++;
         if(end>=next_memory){
+            if(!measurement_ready){
+                printf("{\"type\":\"measurement_ready\",\"init_complete_us\":%lld,\"time_us\":%lld,\"settle_us\":10000000}\n",init_complete_us,end);
+                measurement_ready=true;
+            }
             size_t guest_used=0;
 #if HARNESS_MODE_pocket
             guest_used=ws_ui_heap();
@@ -153,6 +159,8 @@ void app_main(void) {
     usb_serial_jtag_driver_config_t usb=USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb));
     commands=xQueueCreate(4,160);ESP_ERROR_CHECK(commands?ESP_OK:ESP_ERR_NO_MEM);
-    configASSERT(xTaskCreate(console,"console",4096,NULL,3,NULL)==pdPASS);
-    configASSERT(xTaskCreatePinnedToCoreWithCaps(owner,"owner",CONFIG_HARNESS_STACK_BYTES,NULL,5,NULL,1,MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT)==pdPASS);
+    BaseType_t created=xTaskCreate(console,"console",4096,NULL,3,NULL);
+    ESP_ERROR_CHECK(created==pdPASS?ESP_OK:ESP_ERR_NO_MEM);
+    created=xTaskCreatePinnedToCoreWithCaps(owner,"owner",CONFIG_HARNESS_STACK_BYTES,NULL,5,NULL,1,MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
+    ESP_ERROR_CHECK(created==pdPASS?ESP_OK:ESP_ERR_NO_MEM);
 }

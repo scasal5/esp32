@@ -8,6 +8,11 @@ import statistics
 def events(path):
     output=[]
     for line in path.read_text(errors='replace').splitlines():
+        line=line.strip()
+        # USB console can leave a prompt before a complete telemetry record.
+        # Never extract arbitrary braces from logs or repair corrupted JSON.
+        if line.startswith('ws183>'):
+            line=line[len('ws183>'):].lstrip()
         try:
             item=json.loads(line)
             if isinstance(item,dict):output.append(item)

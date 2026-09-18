@@ -18,13 +18,21 @@ static void baseline_metrics(void *arg)
 {
     (void)arg;
     const uint32_t cap = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    const int64_t init_complete_us = esp_timer_get_time();
+    bool ready = false;
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(10000));
-        printf("{\"type\":\"baseline_memory\",\"time_us\":%lld,\"internal_free\":%u,"
-               "\"internal_min\":%u,\"largest_internal_block\":%u,\"psram_free\":%u,\"sta\":%s}\n",
+        if (!ready) {
+            printf("\n{\"type\":\"measurement_ready\",\"init_complete_us\":%lld,\"time_us\":%lld,\"settle_us\":10000000}\n",
+                   init_complete_us, esp_timer_get_time());
+            ready = true;
+        }
+        printf("\n{\"type\":\"memory\",\"scenario\":0,\"guest_heap_used\":0,\"time_us\":%lld,\"internal_free\":%u,"
+               "\"internal_min\":%u,\"largest_internal_block\":%u,\"psram_free\":%u}\n",
                esp_timer_get_time(), (unsigned)heap_caps_get_free_size(cap),
                (unsigned)heap_caps_get_minimum_free_size(cap), (unsigned)heap_caps_get_largest_free_block(cap),
-               (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM), svc_wifi_connected() ? "true" : "false");
+               (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        printf("\n{\"type\":\"wifi\",\"connected\":%s}\n", svc_wifi_connected() ? "true" : "false");
     }
 }
 #endif
@@ -57,9 +65,6 @@ static const os_app_t app_aspecto = {
 
 void app_main(void)
 {
-#if CONFIG_WS183_BASELINE_METRICS
-    configASSERT(xTaskCreate(baseline_metrics, "baseline", 3072, NULL, 2, NULL) == pdPASS);
-#endif
     /* 1. I2C primero. De este bus cuelgan el AXP2101, el tactil CST816S,
           la IMU QMI8658 y el RTC de la placa. */
     ESP_ERROR_CHECK(bsp_i2c_init());
@@ -176,4 +181,11 @@ void app_main(void)
     } else {
         svc_wifi_register_console();
     }
+#if CONFIG_WS183_BASELINE_METRICS
+    /* Measurement window starts ten seconds after synchronous initialization. */
+    BaseType_t metrics_created = xTaskCreate(baseline_metrics, "baseline", 3072, NULL, 2, NULL);
+    if (metrics_created != pdPASS) {
+        ESP_LOGE(TAG, "baseline telemetry task creation failed");
+    }
+#endif
 }

@@ -9,6 +9,16 @@ permissions:
   contents: read
 
 jobs:
+  harness-tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Test harness tools without hardware or IDF
+        run: python -m unittest discover -s pocketjs-s3-harness/tests -v
+
   firmware:
     runs-on: ubuntu-latest
     steps:

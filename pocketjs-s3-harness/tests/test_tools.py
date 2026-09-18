@@ -59,5 +59,16 @@ class Contracts(unittest.TestCase):
             p=Path(folder)/'bad.bin';p.write_bytes(b'\0'*256)
             with self.assertRaises(SystemExit):check_image(p)
 
+    def test_repl_prompt_and_corrupt_lines(self):
+        with tempfile.TemporaryDirectory() as folder:
+            p=Path(folder)/'log'
+            p.write_text('ws183> {"type":"memory"}\n'
+                         'ws183> report\n'
+                         '{"type":unexpected console output}\n'
+                         'I (1) log {"type":"memory"}\n'
+                         '{"type":"wifi","connected":true}\n')
+            self.assertEqual(events(p),[{'type':'memory'},
+                                       {'type':'wifi','connected':True}])
+
 
 if __name__=='__main__':unittest.main()
