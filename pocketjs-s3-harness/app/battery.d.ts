@@ -11,3 +11,5 @@ interface BatterySnapshot {
 declare var battery: { readonly apiVersion: 1; read(): BatterySnapshot };
 declare var __wsScenario: number | undefined;
 declare var __wsGolden: boolean | undefined;
+/** Harness-only acknowledgement of an input-caused visual mutation. */
+declare var __wsResponded: boolean | undefined;

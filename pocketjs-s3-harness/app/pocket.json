@@ -6,6 +6,6 @@
   "title": "ws183 harness",
   "version": "0.1.0",
   "engine": {"capabilities": {"requires": ["input.buttons", "input.touch", "text.glyphs.baked"]}},
-  "app": {"entry": "main.tsx", "output": "harness", "framework": "solid",
+  "app": {"entry": "main.ts", "output": "harness", "framework": "solid",
           "viewport": {"logical": [240, 284], "presentation": "native"}}
 }

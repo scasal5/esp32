@@ -9,7 +9,10 @@ def main():
     p=argparse.ArgumentParser()
     p.add_argument('--port',default='COM3')
     p.add_argument('--seconds',type=float,default=30)
-    p.add_argument('--command',choices=['smoke','soak','report'])
+    p.add_argument('--command',choices=['smoke','soak','report','fail-transfer'])
+    p.add_argument('--scenario',type=int,choices=range(6))
+    p.add_argument('--until-complete',action='store_true')
+    p.add_argument('--report-at-end',action='store_true')
     p.add_argument('--reset',action='store_true',help='Reset the USB-JTAG board after opening the capture port')
     p.add_argument('--out',type=Path,required=True)
     a=p.parse_args()
@@ -21,13 +24,23 @@ def main():
             connection.rts=True
             time.sleep(0.2)
             connection.rts=False
-            time.sleep(0.2)
+            time.sleep(3) # Allow panel/guest initialization before console commands.
+        if a.scenario is not None:connection.write(f'scenario {a.scenario}\n'.encode())
         if a.command:connection.write((a.command+'\n').encode())
         end=time.monotonic()+a.seconds
         with a.out.open('wb') as output:
+            tail=b''
             while time.monotonic()<end:
                 data=connection.read(4096)
                 if data:output.write(data);output.flush()
+                tail=(tail+data)[-8192:]
+                if a.until_complete and b'"type":"run_complete"' in tail:break
+            if a.report_at_end:
+                connection.write(b'report\n')
+                end=time.monotonic()+2
+                while time.monotonic()<end:
+                    data=connection.read(4096)
+                    if data:output.write(data)
     finally:connection.close()
     print('Captured',a.out.stat().st_size,'bytes in',a.out)
 

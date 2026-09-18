@@ -10,6 +10,7 @@ Selecting ota_0 remains gate0.py probe; restoring remains gate0.py restore.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import struct
 import subprocess
@@ -94,6 +95,12 @@ def main() -> None:
 
     app = load_app(args.build)
     size = check_image(app)
+    receipt_path=args.build/'receipt.json'
+    if not receipt_path.is_file():raise SystemExit('Missing build receipt; compile with the harness build script')
+    receipt=json.loads(receipt_path.read_text())
+    recorded=[value for name,value in receipt.get('files',{}).items() if Path(name).name==app.name]
+    if recorded!=[hashlib.sha256(app.read_bytes()).hexdigest()]:
+        raise SystemExit('Application differs from its build receipt; rebuild before flashing')
     if args.expect_mac:
         mac = read_mac(args.port)
         expect = args.expect_mac.replace("-", ":").upper()

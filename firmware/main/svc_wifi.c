@@ -101,6 +101,9 @@ static esp_err_t scan_start_now(void)
 
 static void nvs_erase_ns(const char *ns)
 {
+#if CONFIG_WS183_BASELINE_METRICS
+    return; /* Baseline never changes the product's recovery data. */
+#endif
     nvs_handle_t h;
     if (nvs_open(ns, NVS_READWRITE, &h) != ESP_OK) {
         return;
@@ -113,6 +116,9 @@ static void nvs_erase_ns(const char *ns)
 
 static void creds_save(const char *ssid, const char *pass)
 {
+#if CONFIG_WS183_BASELINE_METRICS
+    return;
+#endif
     if (ssid == NULL || ssid[0] == '\0' || pass == NULL || pass[0] == '\0') {
         return;
     }
@@ -543,6 +549,9 @@ esp_err_t svc_wifi_start(void)
     /* NVS es del driver (calibracion PHY) y de ws183_wifi (creds propias). */
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+#if CONFIG_WS183_BASELINE_METRICS
+        return err;
+#endif
         ESP_LOGW(TAG, "nvs: %s, se formatea", esp_err_to_name(err));
         err = nvs_flash_erase();
         if (err == ESP_OK) {
@@ -565,6 +574,9 @@ esp_err_t svc_wifi_start(void)
     }
 
     wifi_init_config_t config = WIFI_INIT_CONFIG_DEFAULT();
+#if CONFIG_WS183_BASELINE_METRICS
+    config.nvs_enable = 0;
+#endif
     err = esp_wifi_init(&config);
     if (err != ESP_OK) {
         return err;

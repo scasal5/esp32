@@ -30,7 +30,8 @@ static void sample(void *) {
     }
 }
 extern "C" void ws_battery_start(void) {
-    configASSERT(xTaskCreate(sample,"battery",4096,nullptr,3,nullptr)==pdPASS);
+    BaseType_t created=xTaskCreate(sample,"battery",4096,nullptr,3,nullptr);
+    ESP_ERROR_CHECK(created==pdPASS?ESP_OK:ESP_ERR_NO_MEM);
 }
 extern "C" ws_battery_t ws_battery_snapshot(void) {
     portENTER_CRITICAL(&lock); ws_battery_t value=latest; portEXIT_CRITICAL(&lock);

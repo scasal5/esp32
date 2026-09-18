@@ -12,4 +12,6 @@ try {
     }
     & $bun "$root/.deps/pocketjs/tools/pocket.ts" build --manifest "$root/app/pocket.json" --host-profile "$root/pocket.host.json" --project-root "$root/app" --outdir "$root/out/app" --output "$root/out/app/harness.pocket"
     if($LASTEXITCODE -ne 0){throw 'Package compilation failed'}
+    & $bun "$PSScriptRoot/minify_package.ts" "$root/out/app/harness.pocket"
+    if($LASTEXITCODE -ne 0){throw 'Package minification failed'}
 } finally {Pop-Location}

@@ -46,30 +46,52 @@ def evaluate(rows,receipt):
     if receipt.get('mode')!='pocket':problems.append('not build 3')
     if receipt.get('bin_bytes',1<<32)>4*1024*1024:problems.append('app exceeds 4 MiB or unmeasured')
     complete=[r for r in rows if r.get('type')=='run_complete']
-    if not any(r.get('elapsed_us',0)>=7200_000000 and not r.get('fault',True) for r in complete):problems.append('missing successful 2h soak')
+    if not any(r.get('kind')=='soak' and r.get('sta_at_start') and r.get('elapsed_us',0)>=7200_000000 and not r.get('fault',True) for r in complete):problems.append('missing successful 2h soak')
+    for wifi in (False,True):
+        if not any(r.get('kind')=='smoke' and r.get('wifi_enabled') is wifi and
+                   (not wifi or r.get('sta_at_start')) and r.get('ticks',0)>=10000 and not r.get('fault',True) for r in complete):
+            problems.append('missing 10k smoke: '+('STA' if wifi else 'Wi-Fi never initialized'))
+    if sum(r.get('type')=='reconnect' and r.get('was_connected') is True for r in rows)<11:
+        problems.append('induced reconnects unverified')
     if not any(r.get('type')=='wifi' and r.get('connected') for r in rows):problems.append('STA connection unverified')
     for test in ('static','golden','battery','input','restore','runaway'):
         if not any(r.get('type')=='invariant' and r.get('test')==test and r.get('pass') is True for r in rows):
             problems.append(test+' unverified')
-    if any(r.get('type')=='guest_fault' or r.get('pass') is False for r in rows):problems.append('observed fault/failing check')
+    if any(r.get('type')=='guest_fault' or r.get('pass') is False or
+           (r.get('type')=='guest_start' and r.get('error')!=0) for r in rows):problems.append('observed fault/failing check')
+    if not any(r.get('type')=='invariant' and r.get('test')=='memory_stability' and r.get('pass') is True for r in rows):
+        problems.append('equivalent-cycle memory stability not reviewed')
     timings=[r['timing']['irq_to_present'] for r in rows if r.get('type')=='scenario' and r.get('scenario')!=5 and r.get('timing',{}).get('irq_to_present',{}).get('count',0)>0]
     if not timings:problems.append('no correlated physical touch measurements')
     elif any(t['p95_upper_us']>50000 for t in timings):problems.append('partial touch p95 >50ms; repeat with double bounce')
     return dict(status='NOT-YET' if problems else 'PASS',causes=problems,memory=memory)
 
 
+def comparison_policy(receipt):
+    prefixes=('CONFIG_SPIRAM','CONFIG_COMPILER_','CONFIG_FREERTOS_','CONFIG_ESP_DEFAULT_CPU_',
+              'CONFIG_ESP_TASK_WDT','CONFIG_ESP_WIFI','CONFIG_LOG_','CONFIG_HARNESS_')
+    values={}
+    for line in receipt.get('sdkconfig','').splitlines():
+        if line.startswith('# CONFIG_') and line.endswith(' is not set'):
+            line=line[2:-11]+'=n'
+        if '=' in line:
+            key,value=line.split('=',1)
+            if key.startswith(prefixes):values[key]=value
+    return values
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--log',type=Path,required=True)
+    p.add_argument('--log',type=Path,required=True,action='append')
     p.add_argument('--receipt',type=Path,required=True)
     p.add_argument('--baseline-log',type=Path)
     p.add_argument('--baseline-receipt',type=Path)
     p.add_argument('--out',type=Path,required=True)
-    a=p.parse_args();receipt=json.loads(a.receipt.read_text());rows=events(a.log)
+    a=p.parse_args();receipt=json.loads(a.receipt.read_text());rows=[r for path in a.log for r in events(path)]
     result=evaluate(rows,receipt);result['receipt']=str(a.receipt)
     if a.baseline_receipt:
         base=json.loads(a.baseline_receipt.read_text())
-        if base.get('mode')!='native' or base.get('profile')!=receipt.get('profile') or base.get('compiler')!=receipt.get('compiler'):
+        if base.get('mode')!='native' or base.get('profile')!=receipt.get('profile') or base.get('compiler')!=receipt.get('compiler') or comparison_policy(base)!=comparison_policy(receipt):
             result['causes'].append('builds 2/3 configurations are not comparable');result['status']='NOT-YET'
         else:result['app_delta_bytes']=receipt['bin_bytes']-base['bin_bytes']
     if a.baseline_log:

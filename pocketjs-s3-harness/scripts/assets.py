@@ -20,6 +20,7 @@ def main():
     parser.add_argument('--backup',type=Path,required=True)
     parser.add_argument('--mkspiffs',type=Path,required=True)
     parser.add_argument('--package',type=Path)
+    parser.add_argument('--previous-proof',type=Path,help='Verified prior harness image to replace, instead of original assets')
     parser.add_argument('--port')
     parser.add_argument('--expect-mac',default='44:1B:F6:84:DA:88')
     a=parser.parse_args()
@@ -61,7 +62,15 @@ def main():
     if a.action=='install':
         if sha(merged.read_bytes())!=checked['merged_sha256']:raise RuntimeError('Staged image changed')
         # Refuse to overwrite assets uploaded since the backup.
-        run(a.port,'verify_flash','0x900000',original)
+        current=original
+        if a.previous_proof:
+            previous=json.loads(a.previous_proof.read_text())
+            current=a.previous_proof.parent/'assets-harness.bin'
+            without_harness=lambda record:{k:v for k,v in record['files'].items() if k!='harness.pocket'}
+            if previous['original_sha256']!=checked['original_sha256'] or without_harness(previous)!=without_harness(checked):
+                raise RuntimeError('Prior image does not preserve the same original files')
+            if sha(current.read_bytes())!=previous['merged_sha256']:raise RuntimeError('Prior image changed')
+        run(a.port,'verify_flash','0x900000',current)
         image=merged
     else:image=original
     run(a.port,'write_flash','0x900000',image)

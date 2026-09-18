@@ -115,6 +115,11 @@ static void owner(void *arg) {
                 puts("Wi-Fi is disabled in this build; never initialized.");
 #endif
             }
+            if(!strcmp(command,"smoke")||!strcmp(command,"soak")){
+                ws_metrics_reset();
+                printf("{\"type\":\"run_start\",\"kind\":\"%s\",\"time_us\":%lld,\"wifi_enabled\":%s,\"sta\":%s,\"guest_fault\":%s}\n",
+                    run_kind,start,CONFIG_HARNESS_WIFI?"true":"false",run_sta?"true":"false",fault?"true":"false");
+            }
             memset(command,0,sizeof(command));
         }
         ws_frame_metrics_t m={0};int64_t due=ws_clock_wait(&m.skipped);
