@@ -199,5 +199,10 @@ bool ws_ui_fault_test(const char *kind) {
     /* Intentionally no prepare/render/transfer after the failed guest turn. */
     printf("{\"type\":\"invariant\",\"test\":\"freeze_%s\",\"pass\":%s,\"elapsed_us\":%lld,\"error\":%d,\"timeout\":%s,\"cause\":\"%s\",\"framebuffer_crc\":%lu}\n",
         kind,passed?"true":"false",elapsed,e,expired?"true":"false",ws_guest_cause(e,expired),(unsigned long)before);
+    if(passed){
+        static unsigned freeze_ok;
+        freeze_ok|=eval?1u:promise?2u:4u;
+        if(freeze_ok==7u)puts("{\"type\":\"invariant\",\"test\":\"runaway\",\"pass\":true}");
+    }
     return passed;
 }

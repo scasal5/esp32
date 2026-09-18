@@ -37,10 +37,24 @@ dependencies:
     source:
       type: idf
     version: 6.0.2
+  pocketjs_guest:
+    dependencies: []
+    source:
+      path: components/pocketjs_guest
+      type: local
+    version: 0.1.0
+  pocketjs_ui_core:
+    dependencies: []
+    source:
+      path: .deps/pocketjs/hosts/esp-idf/components/pocketjs_ui_core
+      type: local
+    version: 0.1.0
 direct_dependencies:
 - espressif/esp_lcd_touch_cst816s
 - espressif/quickjs-ng
 - idf
-manifest_hash: bda67073b6c774829151f80701dd2101c270ad4af000918130de422a092385a2
+- pocket-stack/pocketjs_guest
+- pocket-stack/pocketjs_ui_core
+manifest_hash: eb98b2132b4f8219388648cce2d9f7fcdfadbd9c52cf823ef0782fa4e950ac78
 target: esp32s3
 version: 3.0.0

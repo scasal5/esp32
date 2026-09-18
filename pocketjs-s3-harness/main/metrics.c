@@ -53,11 +53,15 @@ void ws_metrics_reset(void) {
     last_present=window_start=window_end=0;
 }
 void ws_memory_sample(unsigned scenario,uint32_t ticks,size_t guest_used) {
+    /* Monotonico desde el boot y nunca reseteado: un hueco en seq es una linea
+       que se comio el USB, no una muestra que no se tomo. Sin esto, el soak no
+       puede distinguir "no hubo fuga" de "se perdio la evidencia". */
+    static uint32_t seq;
     const uint32_t cap=MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT;
-    printf("{\"type\":\"memory\",\"time_us\":%lld,\"scenario\":%u,\"ticks\":%lu,"
+    printf("{\"type\":\"memory\",\"seq\":%lu,\"time_us\":%lld,\"scenario\":%u,\"ticks\":%lu,"
            "\"internal_free\":%u,\"internal_min\":%u,\"largest_internal_block\":%u,"
            "\"psram_free\":%u,\"guest_heap_used\":%u,\"owner_stack_free\":%u}\n",
-           esp_timer_get_time(),scenario,(unsigned long)ticks,(unsigned)heap_caps_get_free_size(cap),
+           (unsigned long)seq++,esp_timer_get_time(),scenario,(unsigned long)ticks,(unsigned)heap_caps_get_free_size(cap),
            (unsigned)heap_caps_get_minimum_free_size(cap),(unsigned)heap_caps_get_largest_free_block(cap),
            (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),(unsigned)guest_used,
            (unsigned)uxTaskGetStackHighWaterMark(NULL));

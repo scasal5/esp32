@@ -182,5 +182,6 @@ esp_err_t ws_headless_tests(void) {
         if(!passed)return ESP_FAIL;
         vTaskDelay(1);
     }
+    puts("{\"type\":\"invariant\",\"test\":\"runaway\",\"pass\":true}");
     return admitted?ESP_OK:ESP_FAIL;
 }

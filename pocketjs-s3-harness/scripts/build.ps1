@@ -8,6 +8,8 @@ param(
     [switch]$Reconfigure
 )
 $ErrorActionPreference='Stop'
+# Git Bash re-injects MSYSTEM into child processes; idf_tools.py aborts if it is set.
+if ($env:MSYSTEM) { Remove-Item Env:MSYSTEM }
 $root=(Resolve-Path "$PSScriptRoot/..").Path
 $env:IDF_PATH=(Resolve-Path $IdfPath).Path
 $env:IDF_TOOLS_PATH=(Resolve-Path $ToolsPath).Path

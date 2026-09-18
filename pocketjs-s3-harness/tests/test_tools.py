@@ -10,7 +10,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from gate0 import partitions,ota_entries
 from host_contract import generate
 from prepare_quickjs import prepare
-from report import evaluate,events
+from report import evaluate,events,DEVICE_INVARIANTS,HOST_GATES,DERIVED_GATES
 from flash_ota0 import check_image
 
 
@@ -48,6 +48,46 @@ class Contracts(unittest.TestCase):
             'internal_min':100000,'largest_internal_block':50000,'psram_free':8000000,'guest_heap_used':0}],
             {'mode':'native','bin_bytes':100})
         self.assertIn('not build 3',result['causes'])
+
+    def test_lost_console_lines_are_not_a_clean_soak(self):
+        # A hole in seq is evidence the USB console dropped a record. Fitting a
+        # slope over what survived would report "no leak" from a partial series.
+        rows=[{'type':'memory','seq':0,'scenario':0,'time_us':1,'internal_free':100000,'internal_min':100000,'largest_internal_block':50000,'psram_free':8000000,'guest_heap_used':0},{'type':'memory','seq':2,'scenario':0,'time_us':3,'internal_free':100000,'internal_min':100000,'largest_internal_block':50000,'psram_free':8000000,'guest_heap_used':0}]
+        self.assertIn('1 memory samples lost on the console',evaluate(rows,{'mode':'pocket','bin_bytes':100})['causes'])
+        rows=[{'type':'memory','seq':0,'scenario':0,'time_us':1,'internal_free':100000,'internal_min':100000,'largest_internal_block':50000,'psram_free':8000000,'guest_heap_used':0},{'type':'memory','seq':1,'scenario':0,'time_us':2,'internal_free':100000,'internal_min':100000,'largest_internal_block':50000,'psram_free':8000000,'guest_heap_used':0}]
+        self.assertNotIn('1 memory samples lost on the console',evaluate(rows,{'mode':'pocket','bin_bytes':100})['causes'])
+
+    def test_memory_records_without_seq_cannot_prove_continuity(self):
+        rows=[{'type':'memory','scenario':0,'time_us':1,'internal_free':100000,'internal_min':100000,
+               'largest_internal_block':50000,'psram_free':8000000,'guest_heap_used':0}]
+        self.assertIn('memory sample continuity unverified: records carry no seq',
+                      evaluate(rows,{'mode':'pocket','bin_bytes':100})['causes'])
+
+    def test_every_device_invariant_has_a_firmware_producer(self):
+        sources=''.join(path.read_text(errors='replace')
+                        for path in (Path(__file__).resolve().parents[1]/'main').glob('*.c'))
+        missing=[name for name in DEVICE_INVARIANTS if '\\"test\\":\\"'+name not in sources]
+        self.assertEqual(missing,[],'device invariants without a producer in main/*.c: '+', '.join(missing))
+
+    def test_restore_is_host_evidence_not_a_device_invariant(self):
+        self.assertIn('restore',HOST_GATES)
+        self.assertNotIn('restore',DEVICE_INVARIANTS)
+        report=(Path(__file__).resolve().parents[1]/'scripts/report.py').read_text(encoding='utf-8')
+        self.assertIn("restore_verified",report)
+
+    def test_memory_stability_is_derived_not_emitted(self):
+        self.assertIn('memory_stability',DERIVED_GATES)
+        self.assertNotIn('memory_stability',DEVICE_INVARIANTS)
+        samples=[{'type':'memory','seq':i,'scenario':0,'time_us':t,'internal_free':100000,
+                  'internal_min':100000,'largest_internal_block':50000,'psram_free':8000000,'guest_heap_used':0}
+                 for i,t in enumerate((1,2,3,4,5,6,200000000,200000001,200000002,200000003,200000004,200000005))]
+        causes=evaluate(samples,{'mode':'pocket','bin_bytes':100,'restore_verified':True})['causes']
+        self.assertNotIn('equivalent-cycle memory stability unverified',causes)
+        self.assertNotIn('equivalent-cycle memory stability failed',causes)
+
+    def test_restore_receipt_flag_satisfies_host_gate(self):
+        causes=evaluate([],{'mode':'pocket','bin_bytes':100,'restore_verified':True})['causes']
+        self.assertNotIn('restore unverified',causes)
 
     def test_serial_prefixes_not_measurements(self):
         with tempfile.TemporaryDirectory() as folder:

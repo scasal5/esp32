@@ -3,7 +3,9 @@
   "compilerLog": {
     "file": ".tools/package-build.log",
     "harnessJsBytes": 136656,
-    "firstMinifyLine": "Minified package: 210904 -> 167992 bytes"
+    "firstMinifyLine": "Minified package: 210904 -> 167992 bytes",
+    "spiffsFirstPackageBytes": 209768,
+    "note": "spiffs-first.pocket (209768) is not the 210904 minify input; the package was rebuilt between that flash and the minify run."
   },
   "lost": {
     "packageBytes": 167992,

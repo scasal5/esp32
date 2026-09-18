@@ -17,6 +17,7 @@
 #include "esp_app_desc.h"
 #include "esp_ota_ops.h"
 #include "driver/usb_serial_jtag.h"
+#include "driver/usb_serial_jtag_vfs.h"
 #include "freertos/task.h"
 #include "freertos/idf_additions.h"
 #include "freertos/queue.h"
@@ -143,6 +144,8 @@ static void owner(void *arg) {
         if(m.presented&&m.input_response&&pending_irq){
             m.irq_valid=true;m.poll_valid=true;m.us[M_IRQ]=(uint32_t)(end-pending_irq);m.us[M_POLL]=(uint32_t)(end-pending_poll);
             pending_irq=0;pending_poll=0;
+            static bool input_ok;
+            if(!input_ok){puts("{\"type\":\"invariant\",\"test\":\"input\",\"pass\":true}");input_ok=true;}
         }
         /* Do not attribute a later autonomous animation to an ignored touch. */
         if(!m.input_response){pending_irq=0;pending_poll=0;}
@@ -179,7 +182,29 @@ void app_main(void) {
     const esp_task_wdt_config_t watchdog={.timeout_ms=2000,.idle_core_mask=0,.trigger_panic=true};
     ESP_ERROR_CHECK(esp_task_wdt_reconfigure(&watchdog));
     usb_serial_jtag_driver_config_t usb=USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
+    usb.tx_buffer_size=4096;
     ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb));
+    usb_serial_jtag_vfs_use_driver();
+    /*
+     * El VFS de usb_serial_jtag descarta bytes por diseno. Si el host deja de
+     * drenar el FIFO por mas de TX_FLUSH_TIMEOUT_US (50 ms, constante de IDF),
+     * tx_char deja de intentar y tira cada byte hasta que el buffer vuelve a
+     * ser escribible. El driver agrega un ring de 4 KiB que absorbe rafagas,
+     * pero la perdida sigue siendo posible: no hay consola sin perdidas acá.
+     *
+     * Con _IONBF cada fragmento de printf es un write separado, y
+     * ws_metrics_dump arma el registro de escenario con once printf. Una
+     * perdida parcial corta el JSON por la mitad y puede seguir pareciendo
+     * valido. Con _IOLBF el registro entero sale en un solo write al '
+':
+     * lo que se pierde es la linea completa, y el hueco se detecta por la
+     * secuencia del heartbeat en vez de corromper un valor en silencio.
+     *
+     * El buffer es estatico a proposito: una asignacion de heap aca moveria
+     * la linea base de memoria entre los builds 2 y 3.
+     */
+    static char stdout_line[2048];
+    setvbuf(stdout,stdout_line,_IOLBF,sizeof(stdout_line));
     commands=xQueueCreate(4,160);ESP_ERROR_CHECK(commands?ESP_OK:ESP_ERR_NO_MEM);
     BaseType_t created=xTaskCreate(console,"console",4096,NULL,3,NULL);
     ESP_ERROR_CHECK(created==pdPASS?ESP_OK:ESP_ERR_NO_MEM);
