@@ -1,0 +1,24 @@
+{
+  "variant": "A-solid-minified",
+  "profileId": "ws183-harness",
+  "targetId": "ws183-harness",
+  "hostAbi": 1,
+  "transform": "minify",
+  "packageBytes": 135272,
+  "packageSha256": "78ffb8965ce8c5854e3316e2a9087b6d031bacb496baa462b5703f62e03c6a15",
+  "javascriptBytes": 61034,
+  "javascriptSha256": "2a0e319d358ef95a4c7ea3a316d8edaeccab697ec8047f4e0974b71653cf4d17",
+  "pakBytes": 72480,
+  "budgets": {
+    "heapBytes": 1048576,
+    "jsStackBytes": 24576,
+    "evalBudgetUs": 500000,
+    "turnBudgetUs": 20000
+  },
+  "recovered": true,
+  "originalMissing": true,
+  "originalPackageBytes": 167992,
+  "originalPackageSha256": "ce169427f9e3cfd26b60025cb51e3c6aef0ddd221dfb8db4ac286662d4b3ed02",
+  "originalBytesRecovered": false,
+  "bun": null
+}

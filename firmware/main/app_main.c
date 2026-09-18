@@ -7,6 +7,35 @@
 
 #include <stdlib.h>
 #include <time.h>
+#if CONFIG_WS183_BASELINE_METRICS
+#include "svc_wifi.h"
+#include "esp_heap_caps.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include <stdio.h>
+static void baseline_metrics(void *arg)
+{
+    (void)arg;
+    const uint32_t cap = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    const int64_t init_complete_us = esp_timer_get_time();
+    bool ready = false;
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(10000));
+        if (!ready) {
+            printf("\n{\"type\":\"measurement_ready\",\"init_complete_us\":%lld,\"time_us\":%lld,\"settle_us\":10000000}\n",
+                   init_complete_us, esp_timer_get_time());
+            ready = true;
+        }
+        printf("\n{\"type\":\"memory\",\"scenario\":0,\"guest_heap_used\":0,\"time_us\":%lld,\"internal_free\":%u,"
+               "\"internal_min\":%u,\"largest_internal_block\":%u,\"psram_free\":%u}\n",
+               esp_timer_get_time(), (unsigned)heap_caps_get_free_size(cap),
+               (unsigned)heap_caps_get_minimum_free_size(cap), (unsigned)heap_caps_get_largest_free_block(cap),
+               (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        printf("\n{\"type\":\"wifi\",\"connected\":%s}\n", svc_wifi_connected() ? "true" : "false");
+    }
+}
+#endif
 
 #include "app_ajustes.h"
 #include "app_flappy.h"
@@ -152,4 +181,11 @@ void app_main(void)
     } else {
         svc_wifi_register_console();
     }
+#if CONFIG_WS183_BASELINE_METRICS
+    /* Measurement window starts ten seconds after synchronous initialization. */
+    BaseType_t metrics_created = xTaskCreate(baseline_metrics, "baseline", 3072, NULL, 2, NULL);
+    if (metrics_created != pdPASS) {
+        ESP_LOGE(TAG, "baseline telemetry task creation failed");
+    }
+#endif
 }

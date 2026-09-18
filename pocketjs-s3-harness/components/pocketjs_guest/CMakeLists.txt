@@ -1,0 +1,35 @@
+# Product build adapter only: guest implementation and public headers are upstream.
+get_filename_component(harness "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+set(upstream "${harness}/.deps/pocketjs/hosts/esp-idf/components/pocketjs_guest")
+set(prepared_guest "${CMAKE_CURRENT_BINARY_DIR}/guest.c")
+execute_process(COMMAND "${PYTHON}" "${harness}/scripts/prepare_guest_drain.py"
+    "${upstream}/src/guest.c" "${prepared_guest}"
+    RESULT_VARIABLE guest_drain_result)
+if(NOT guest_drain_result EQUAL 0)
+    message(FATAL_ERROR "Reviewed guest drain patch failed")
+endif()
+idf_component_register(SRCS "${prepared_guest}" INCLUDE_DIRS "${upstream}/include"
+    REQUIRES quickjs-ng PRIV_REQUIRES heap log REQUIRED_IDF_TARGETS esp32s3)
+target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)
+if(NOT CMAKE_BUILD_EARLY_EXPANSION)
+    idf_component_get_property(qjs_dir espressif__quickjs-ng COMPONENT_DIR)
+    idf_component_get_property(qjs_lib espressif__quickjs-ng COMPONENT_LIB)
+    set(source "${qjs_dir}/quickjs-ng/quickjs.c")
+    set(prepared "${CMAKE_CURRENT_BINARY_DIR}/quickjs.c")
+    execute_process(COMMAND "${PYTHON}" "${harness}/scripts/prepare_quickjs.py" "${source}" "${prepared}"
+        RESULT_VARIABLE result)
+    if(NOT result EQUAL 0)
+        message(FATAL_ERROR "Reviewed QuickJS source/immutable patch verification failed")
+    endif()
+    get_target_property(sources ${qjs_lib} SOURCES)
+    list(FILTER sources EXCLUDE REGEX "(^|/)quickjs[.]c$")
+    set_property(TARGET ${qjs_lib} PROPERTY SOURCES ${sources} "${prepared}")
+    get_source_file_property(options "${source}" DIRECTORY "${qjs_dir}" COMPILE_OPTIONS)
+    if(options)
+        set_source_files_properties("${prepared}" DIRECTORY "${qjs_dir}" PROPERTIES COMPILE_OPTIONS "${options}")
+    endif()
+    target_include_directories(${qjs_lib} PRIVATE "${qjs_dir}/quickjs-ng")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${harness}/scripts/prepare_quickjs.py" "${source}"
+        "${harness}/scripts/prepare_guest_drain.py" "${upstream}/src/guest.c")
+endif()

@@ -1,0 +1,21 @@
+{
+  "note": "Variant A packages recovered from D:/tmp/ws183-harness-20260918 SPIFFS roundtrips. out/ is gitignored and was overwritten by variant B.",
+  "compilerLog": {
+    "file": ".tools/package-build.log",
+    "harnessJsBytes": 136656,
+    "firstMinifyLine": "Minified package: 210904 -> 167992 bytes",
+    "spiffsFirstPackageBytes": 209768,
+    "note": "spiffs-first.pocket (209768) is not the 210904 minify input; the package was rebuilt between that flash and the minify run."
+  },
+  "lost": {
+    "packageBytes": 167992,
+    "packageSha256": "ce169427f9e3cfd26b60025cb51e3c6aef0ddd221dfb8db4ac286662d4b3ed02",
+    "source": "overwritten out/app/harness.pocket.receipt.json from the minify of 167992 -> 135272",
+    "bytesRecovered": false
+  },
+  "recovered": [
+    "variant-a-solid/spiffs-first.pocket",
+    "variant-a-solid/minified.pocket",
+    "variant-b-hostops/harness.pocket"
+  ]
+}

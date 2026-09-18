@@ -1,0 +1,21 @@
+{
+  "variant": "A-solid-spiffs-first",
+  "profileId": "ws183-harness",
+  "targetId": "ws183-harness",
+  "hostAbi": 1,
+  "transform": "none",
+  "packageBytes": 209768,
+  "packageSha256": "db97cf73cc4179d4d84f7316802eb746ca015588c7e22bb29f9f92b2be0f5467",
+  "javascriptBytes": 135522,
+  "javascriptSha256": "722d81a3309cfdbb6201e736e3e5fe2067f3c844abd1710f4a8068155d33ebb8",
+  "pakBytes": 72480,
+  "budgets": {
+    "heapBytes": 1048576,
+    "jsStackBytes": 24576,
+    "evalBudgetUs": 500000,
+    "turnBudgetUs": 20000
+  },
+  "recovered": true,
+  "originalMissing": false,
+  "bun": null
+}

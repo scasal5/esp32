@@ -1,0 +1,4 @@
+# Identified eval-profiling config. Not an acceptance build.
+# Pets the same owner task WDT; raise both together so a 30 s eval is not a panic.
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=30
+CONFIG_HARNESS_EVAL_BUDGET_US=30000000

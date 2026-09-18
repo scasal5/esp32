@@ -1,0 +1,21 @@
+{
+  "variant": "B-hostops",
+  "profileId": "ws183-harness",
+  "targetId": "ws183-harness",
+  "hostAbi": 1,
+  "transform": "minify",
+  "packageBytes": 38472,
+  "packageSha256": "71c8cb6a7230f5b537e8d3ef5b8b77eaffeb4071fd3bed5131208cca456ebc80",
+  "javascriptBytes": 4722,
+  "javascriptSha256": "de2ebe68e5562860f2930d999621611be7a19f561357bd2e1ad18a3a3e085283",
+  "pakBytes": 31984,
+  "budgets": {
+    "heapBytes": 1048576,
+    "jsStackBytes": 24576,
+    "evalBudgetUs": 500000,
+    "turnBudgetUs": 20000
+  },
+  "recovered": true,
+  "originalMissing": false,
+  "bun": null
+}

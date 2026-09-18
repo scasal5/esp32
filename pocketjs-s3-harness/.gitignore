@@ -1,0 +1,12 @@
+.deps/
+.tools/
+out/
+build*/
+sdkconfig*
+!sdkconfig.defaults
+!config/sdkconfig.*
+__pycache__/
+node_modules/
+dist/
+*.pocket
+!evidence/**/*.pocket

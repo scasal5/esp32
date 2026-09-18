@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-idf-host-1.json",
+  "version": 1,
+  "id": "ws183-harness",
+  "platform": "esp-idf",
+  "form": "takeover",
+  "tickHz": 30,
+  "display": {
+    "physicalViewport": [240, 284],
+    "logicalViewports": [[240, 284]],
+    "presentations": ["native"],
+    "rasterDensity": 1
+  },
+  "capabilities": ["input.buttons", "input.touch", "text.glyphs.baked"]
+}
