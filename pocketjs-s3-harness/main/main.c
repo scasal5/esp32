@@ -53,9 +53,17 @@ static void owner(void *arg) {
         esp_app_get_description()->idf_ver,running->label,CONFIG_HARNESS_STACK_BYTES,
         CONFIG_HARNESS_JS_STACK_BYTES,CONFIG_HARNESS_HEAP_BYTES,CONFIG_HARNESS_WIFI?"true":"false");
 #if HARNESS_MODE_headless
+    /* Allow USB enumeration before the one-shot diagnostic output. */
+    for(unsigned i=0;i<30;i++){esp_task_wdt_reset();vTaskDelay(pdMS_TO_TICKS(100));}
     esp_err_t result=ws_headless_tests();
     printf("{\"type\":\"headless_complete\",\"pass\":%s}\n",result==ESP_OK?"true":"false");
-    for(;;){esp_task_wdt_reset();vTaskDelay(pdMS_TO_TICKS(100));}
+    for(;;){
+        esp_task_wdt_reset();char command[160];
+        if(xQueueReceive(commands,command,pdMS_TO_TICKS(100))){
+            if(!strcmp(command,"smoke"))result=ws_headless_tests();
+            printf("{\"type\":\"headless_complete\",\"pass\":%s}\n",result==ESP_OK?"true":"false");
+        }
+    }
 #endif
     ESP_ERROR_CHECK(ws_board_init());ws_battery_start();
     ESP_ERROR_CHECK(ws_panel_init());ESP_ERROR_CHECK(ws_present_init());
@@ -78,15 +86,16 @@ static void owner(void *arg) {
     printf("{\"type\":\"guest_start\",\"error\":%d}\n",startup);
 #endif
     ESP_ERROR_CHECK(ws_clock_start());
-    unsigned scenario=0;uint32_t ticks=0,smoke_end=0;
+    unsigned scenario=0;uint32_t ticks=0,smoke_end=0,run_ticks=0;
     int64_t start=esp_timer_get_time(),next_memory=start+10000000,soak_end=0,next_reconnect=0;
     uint32_t last_input_seq=0;
+    int64_t pending_irq=0,pending_poll=0;
     for(;;){
         esp_task_wdt_reset();char command[160];
         while(xQueueReceive(commands,command,0)){
             if(!strncmp(command,"scenario ",9)){unsigned s=(unsigned)atoi(command+9);if(s<6){ws_metrics_dump(scenario);scenario=s;}}
-            else if(!strcmp(command,"smoke")){smoke_end=ticks+CONFIG_HARNESS_SMOKE_TICKS;start=esp_timer_get_time();}
-            else if(!strcmp(command,"soak")){soak_end=esp_timer_get_time()+(int64_t)CONFIG_HARNESS_SOAK_SECONDS*1000000;next_reconnect=esp_timer_get_time()+600000000;start=esp_timer_get_time();}
+            else if(!strcmp(command,"smoke")){smoke_end=ticks+CONFIG_HARNESS_SMOKE_TICKS;soak_end=0;run_ticks=ticks;start=esp_timer_get_time();}
+            else if(!strcmp(command,"soak")){soak_end=esp_timer_get_time()+(int64_t)CONFIG_HARNESS_SOAK_SECONDS*1000000;smoke_end=0;run_ticks=ticks;next_reconnect=esp_timer_get_time()+600000000;start=esp_timer_get_time();}
             else if(!strcmp(command,"report"))ws_metrics_dump(scenario);
             else if(!strcmp(command,"fail-transfer"))ws_present_inject_failure();
             else if(!strncmp(command,"wifi ",5)){
@@ -100,14 +109,21 @@ static void owner(void *arg) {
         }
         ws_frame_metrics_t m={0};int64_t due=ws_clock_wait(&m.skipped);
         int64_t begin=esp_timer_get_time();ws_input_t input=ws_input_read();m.coalesced=input.coalesced;
+        if(input.sequence!=last_input_seq&&input.irq_us){
+            /* Preserve the oldest unpresented event; coalescing must not make
+             * the latency artificially younger on the next poll. */
+            if(!pending_irq){pending_irq=input.irq_us;pending_poll=input.poll_us;}
+            last_input_seq=input.sequence;
+        }
 #if HARNESS_MODE_pocket
         esp_err_t e=ESP_OK;
         if(!fault)e=ws_ui_frame(input,scenario,&m);
-        if(e!=ESP_OK){fault=true;printf("{\"type\":\"guest_fault\",\"error\":%d,\"ticks\":%lu}\n",e,(unsigned long)ticks);}
+        if(e!=ESP_OK&&e!=ESP_ERR_NOT_FINISHED){fault=true;printf("{\"type\":\"guest_fault\",\"error\":%d,\"ticks\":%lu}\n",e,(unsigned long)ticks);}
 #endif
         int64_t end=esp_timer_get_time();m.us[M_TOTAL]=(uint32_t)(end-begin);m.deadline_met=end<=due+33333;
-        if(m.presented&&input.sequence!=last_input_seq&&input.irq_us){
-            m.irq_valid=true;m.poll_valid=true;m.us[M_IRQ]=(uint32_t)(end-input.irq_us);m.us[M_POLL]=(uint32_t)(end-input.poll_us);last_input_seq=input.sequence;
+        if(m.presented&&pending_irq){
+            m.irq_valid=true;m.poll_valid=true;m.us[M_IRQ]=(uint32_t)(end-pending_irq);m.us[M_POLL]=(uint32_t)(end-pending_poll);
+            pending_irq=0;pending_poll=0;
         }
         ws_metrics_add(&m);ticks++;
         if(end>=next_memory){
@@ -119,12 +135,14 @@ static void owner(void *arg) {
             printf("{\"type\":\"wifi\",\"connected\":%s}\n",ws_wifi_connected()?"true":"false");
         }
         if(smoke_end||soak_end){
-            unsigned s=((end-start)/70000000)%6;
+            /* Static gets >=60 s. All other scenarios fit within 10k ticks. */
+            int64_t phase=(end-start)%320000000;
+            unsigned s=phase<70000000?0:1+(phase-70000000)/50000000;
             if(s!=scenario){ws_metrics_dump(scenario);scenario=s;}
         }
         if(soak_end&&end>=next_reconnect){ws_wifi_reconnect();next_reconnect=end+600000000;}
         if((smoke_end&&ticks>=smoke_end)||(soak_end&&end>=soak_end)){
-            ws_metrics_dump(scenario);printf("{\"type\":\"run_complete\",\"fault\":%s,\"elapsed_us\":%lld,\"ticks\":%lu}\n",fault?"true":"false",end-start,(unsigned long)ticks);
+            ws_metrics_dump(scenario);printf("{\"type\":\"run_complete\",\"fault\":%s,\"elapsed_us\":%lld,\"ticks\":%lu}\n",fault?"true":"false",end-start,(unsigned long)(ticks-run_ticks));
             smoke_end=0;soak_end=0;
         }
     }

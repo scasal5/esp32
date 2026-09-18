@@ -4,6 +4,7 @@ param(
     [string]$IdfPath="$PSScriptRoot/../.deps/esp-idf",
     [string]$ToolsPath="$PSScriptRoot/../.tools",
     [string]$ExtraDefaults='',
+    [ValidatePattern('^[a-z0-9-]*$')][string]$Variant='',
     [switch]$Reconfigure
 )
 $ErrorActionPreference='Stop'
@@ -16,6 +17,7 @@ $defaults="$root/sdkconfig.defaults"
 if($Profile -eq 'perf') {$defaults+=";$root/config/sdkconfig.perf"}
 if($ExtraDefaults) {$defaults+=";"+(Resolve-Path $ExtraDefaults).Path}
 $build="$root/build-$Mode-$Profile"
+if($Variant){$build+="-$Variant"}
 $arguments=@('-C',$root,'-B',$build,"-DHARNESS_MODE=$Mode","-DSDKCONFIG=$build/sdkconfig","-DSDKCONFIG_DEFAULTS=$defaults")
 if($Reconfigure) {$arguments+='reconfigure'} else {$arguments+='build'}
 & python "$env:IDF_PATH/tools/idf.py" @arguments

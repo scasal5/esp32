@@ -10,3 +10,4 @@ interface BatterySnapshot {
 /** Private ws183 extension. Deliberately absent from PocketJS capabilities. */
 declare var battery: { readonly apiVersion: 1; read(): BatterySnapshot };
 declare var __wsScenario: number | undefined;
+declare var __wsGolden: boolean | undefined;

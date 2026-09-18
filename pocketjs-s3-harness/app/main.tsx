@@ -15,6 +15,13 @@ function App() {
   const [level, setLevel] = createSignal('No PMU');
   const [position, setPosition] = createSignal(0);
   const [scroll, setScroll] = createSignal(0);
+  const [edge, setEdge] = createSignal(0);
+  const cases = [
+    {left:0,top:0,width:1,height:40}, {left:239,top:0,width:1,height:40},
+    {left:0,top:283,width:1,height:1}, {left:239,top:283,width:1,height:1},
+    {left:20,top:39,width:31,height:40}, {left:21,top:40,width:31,height:41},
+    {left:0,top:240,width:240,height:40}, {left:1,top:241,width:239,height:43}
+  ];
   let tick = 0, target = 0, previousY: number | undefined;
   const names = ['Static', 'Counter', 'Battery', 'Interrupt', 'List', 'Full screen'];
   onFrame(() => {
@@ -30,6 +37,7 @@ function App() {
     }
     const contact = touches()[0];
     if (scenario() === 3) {
+      if (globalThis.__wsGolden) setEdge(tick % cases.length);
       if (contact) target = Math.max(0, Math.min(176, contact.x - 24));
       else if (tick % 90 === 0) target = target ? 0 : 176;
       const next = Math.round(position() + (target - position()) * 0.25);
@@ -65,6 +73,9 @@ function App() {
       </Show>
       <Show when={scenario() === 5}>
         <View class="absolute top-0 left-0 w-full h-full bg-blue-600" style={{ translateX: position() }} />
+      </Show>
+      <Show when={scenario() === 3 && globalThis.__wsGolden}>
+        <View class="absolute bg-red-500" style={cases[edge()]} />
       </Show>
     </View>
   );

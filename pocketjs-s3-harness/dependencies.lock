@@ -40,7 +40,7 @@ dependencies:
   pocketjs_guest:
     dependencies: []
     source:
-      path: .deps/pocketjs/hosts/esp-idf/components/pocketjs_guest
+      path: components/pocketjs_guest
       type: local
     version: 0.1.0
   pocketjs_ui_core:
@@ -55,6 +55,6 @@ direct_dependencies:
 - idf
 - pocket-stack/pocketjs_guest
 - pocket-stack/pocketjs_ui_core
-manifest_hash: 8a2188816214f159ba8cc4ae6503c76d5f675f7aee99096368f93345a4eb5134
+manifest_hash: eb98b2132b4f8219388648cce2d9f7fcdfadbd9c52cf823ef0782fa4e950ac78
 target: esp32s3
 version: 3.0.0

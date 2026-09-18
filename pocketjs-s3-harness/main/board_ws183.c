@@ -110,10 +110,11 @@ ws_input_t ws_input_read(void) {
     out.coalesced=delta>0 ? delta-1 : 0;
     if (!delta) out.irq_us=0;
     last_seq=out.sequence;
-    uint16_t strength; uint8_t count=0;
+    esp_lcd_touch_point_data_t point={0};uint8_t count=0;
     xSemaphoreTake(ws_i2c_mutex,portMAX_DELAY);
-    if (esp_lcd_touch_read_data(touch)==ESP_OK)
-        out.down=esp_lcd_touch_get_coordinates(touch,&out.x,&out.y,&strength,&count,1) && count;
+    if (esp_lcd_touch_read_data(touch)==ESP_OK && esp_lcd_touch_get_data(touch,&point,&count,1)==ESP_OK){
+        out.down=count>0;out.x=point.x;out.y=point.y;
+    }
     xSemaphoreGive(ws_i2c_mutex);
     if (out.x>=WS_WIDTH || out.y>=WS_HEIGHT) out.down=false;
     bool now=!gpio_get_level(WS_BOOT);

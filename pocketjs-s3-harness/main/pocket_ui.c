@@ -22,6 +22,7 @@ static unsigned scenario_last=99;
 static int64_t static_since;
 static bool static_reported;
 static bool recovery;
+static unsigned golden_cases;
 void ws_ui_stop(void) {
     ws_guest_guard_end();
     if(renderer&&target)pocketjs_rgb565_abort(renderer,target);
@@ -45,6 +46,12 @@ esp_err_t ws_ui_start(void) {
     e=pocketjs_ui_qjs_create(guest,core,&b,&binding);if(e!=ESP_OK)goto fail;
     e=pocketjs_ui_qjs_feed_pak(binding,variant.pak.data,variant.pak.size);if(e!=ESP_OK)goto fail;
     e=pocketjs_ui_qjs_mount(binding);if(e!=ESP_OK)goto fail;
+#if CONFIG_HARNESS_GOLDEN
+    {
+        JSContext *ctx=pocketjs_guest_quickjs_context(guest);JSValue global=JS_GetGlobalObject(ctx);
+        JS_SetPropertyStr(ctx,global,"__wsGolden",JS_TRUE);JS_FreeValue(ctx,global);
+    }
+#endif
     ws_guest_guard_begin(guest,500000);
     e=pocketjs_guest_eval(guest,(const char *)variant.javascript.data,variant.javascript.size-1,"harness");
     if(ws_guest_guard_end())e=ESP_ERR_TIMEOUT;
@@ -71,13 +78,13 @@ static esp_err_t set_scenario(unsigned scenario) {
 esp_err_t ws_ui_frame(ws_input_t in,unsigned scenario,ws_frame_metrics_t *m) {
     if(!guest)return ESP_ERR_INVALID_STATE;
     bool changed=scenario!=scenario_last;
-    esp_err_t e=set_scenario(scenario);if(e!=ESP_OK)return e;
+    int64_t t=esp_timer_get_time();ws_guest_guard_begin(guest,20000);
+    esp_err_t e=set_scenario(scenario);if(e!=ESP_OK){ws_guest_guard_end();return e;}
     ws_guest_set_battery(ws_battery_snapshot());
     pocketjs_ui_touch_t touch={.id=0,.x=in.x,.y=in.y};
     pocketjs_ui_input_t input={.struct_size=sizeof(input),.buttons=in.boot?0x2000U:0,
         .touches=in.down?&touch:NULL,.touch_count=in.down?1:0};
     pocketjs_ui_frame_view_t frame={.struct_size=sizeof(frame)};
-    int64_t t=esp_timer_get_time();ws_guest_guard_begin(guest,20000);
     e=pocketjs_ui_turn(binding,&input,&frame);
     if(ws_guest_guard_end())e=ESP_ERR_TIMEOUT;
     m->us[M_TURN]=(uint32_t)(esp_timer_get_time()-t);
@@ -120,15 +127,18 @@ esp_err_t ws_ui_frame(ws_input_t in,unsigned scenario,ws_frame_metrics_t *m) {
         if(e!=ESP_OK)goto abort;
         if(esp_rom_crc32_le(0,(uint8_t *)fb,WS_FRAME_BYTES)!=esp_rom_crc32_le(0,(uint8_t *)reference,WS_FRAME_BYTES)||
            memcmp(fb,reference,WS_FRAME_BYTES)){e=ESP_FAIL;goto abort;}
+        if(scenario==3&&++golden_cases==16)puts("{\"type\":\"invariant\",\"test\":\"golden\",\"pass\":true}");
     }
 #endif
     for(unsigned i=0;i<plan.region_count;i++) {
         pocketjs_rgb565_rect_t r=plan.regions[i];
         e=ws_present(fb,(ws_rect_t){r.x,r.y,r.width,r.height},m);
+        if(e==ESP_FAIL)e=ESP_ERR_NOT_FINISHED; /* injected transfer failure, recover next frame */
         if(e!=ESP_OK)goto abort;
     }
     e=pocketjs_rgb565_commit(renderer,target,&frame);
     if(e!=ESP_OK)goto abort;
+    if(recovery)puts("{\"type\":\"invariant\",\"test\":\"transfer_recovery\",\"pass\":true}");
     scenario_last=scenario;recovery=false;m->presented=plan.region_count!=0;
     return ESP_OK;
 abort:

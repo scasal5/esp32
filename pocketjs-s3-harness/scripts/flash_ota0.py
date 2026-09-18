@@ -89,7 +89,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build", type=Path, required=True, help="IDF build directory")
     parser.add_argument("--port", required=True, help="serial port; no default")
-    parser.add_argument("--expect-mac", help="abort if the chip MAC does not match")
+    parser.add_argument("--expect-mac", default="44:1B:F6:84:DA:88", help="abort if the chip MAC does not match")
     args = parser.parse_args()
 
     app = load_app(args.build)
