@@ -1,0 +1,26 @@
+menu "ws183 harness"
+config HARNESS_WIFI
+    bool "Initialize STA (otherwise Wi-Fi is never initialized)"
+    default n
+config HARNESS_GOLDEN
+    bool "Reference framebuffer checks (not a PERF build)"
+    default n
+config HARNESS_DOUBLE_BOUNCE
+    bool "Second DMA bounce for follow-up latency experiment"
+    default n
+config HARNESS_HEAP_BYTES
+    int "QuickJS heap limit"
+    default 1048576
+config HARNESS_STACK_BYTES
+    int "Owner internal task stack in bytes"
+    default 32768
+config HARNESS_JS_STACK_BYTES
+    int "QuickJS stack limit in bytes"
+    default 24576
+config HARNESS_SMOKE_TICKS
+    int "Short smoke tick count"
+    default 10000
+config HARNESS_SOAK_SECONDS
+    int "Soak duration"
+    default 7200
+endmenu

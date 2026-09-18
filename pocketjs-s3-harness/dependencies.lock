@@ -1,0 +1,60 @@
+dependencies:
+  espressif/esp_lcd_touch:
+    component_hash: 3f85a7d95af876f1a6ecca8eb90a81614890d0f03a038390804e5a77e2caf862
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.4.2'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    version: 1.2.1
+  espressif/esp_lcd_touch_cst816s:
+    component_hash: f017808eb754d3fe16987d413a2385f6356890f5737ee3fe36b6a548ea1d1d74
+    dependencies:
+    - name: espressif/esp_lcd_touch
+      registry_url: https://components.espressif.com
+      require: public
+      version: ^1.2.0
+    - name: idf
+      require: private
+      version: '>=5.2'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.1.2
+  espressif/quickjs-ng:
+    component_hash: 51ead31abca34af01a44df24128e9ea10331cf35beb976a18fae62a03d36d6e2
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.4'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 0.14.0
+  idf:
+    source:
+      type: idf
+    version: 6.0.2
+  pocketjs_guest:
+    dependencies: []
+    source:
+      path: .deps/pocketjs/hosts/esp-idf/components/pocketjs_guest
+      type: local
+    version: 0.1.0
+  pocketjs_ui_core:
+    dependencies: []
+    source:
+      path: .deps/pocketjs/hosts/esp-idf/components/pocketjs_ui_core
+      type: local
+    version: 0.1.0
+direct_dependencies:
+- espressif/esp_lcd_touch_cst816s
+- espressif/quickjs-ng
+- idf
+- pocket-stack/pocketjs_guest
+- pocket-stack/pocketjs_ui_core
+manifest_hash: 8a2188816214f159ba8cc4ae6503c76d5f675f7aee99096368f93345a4eb5134
+target: esp32s3
+version: 3.0.0
