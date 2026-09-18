@@ -1,5 +1,14 @@
 menu "ws183-os"
 
+    config WS183_BASELINE_METRICS
+        bool "Harness baseline telemetry every 10 seconds"
+        default n
+
+    config WS183_BASELINE_WIFI_OFF
+        bool "Harness baseline: never initialize Wi-Fi"
+        depends on WS183_BASELINE_METRICS
+        default n
+
     comment "Cada app se registra en app_main.c detras de su opcion."
 
     config WS183_APP_FONDO

@@ -7,6 +7,27 @@
 
 #include <stdlib.h>
 #include <time.h>
+#if CONFIG_WS183_BASELINE_METRICS
+#include "svc_wifi.h"
+#include "esp_heap_caps.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include <stdio.h>
+static void baseline_metrics(void *arg)
+{
+    (void)arg;
+    const uint32_t cap = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(10000));
+        printf("{\"type\":\"baseline_memory\",\"time_us\":%lld,\"internal_free\":%u,"
+               "\"internal_min\":%u,\"largest_internal_block\":%u,\"psram_free\":%u,\"sta\":%s}\n",
+               esp_timer_get_time(), (unsigned)heap_caps_get_free_size(cap),
+               (unsigned)heap_caps_get_minimum_free_size(cap), (unsigned)heap_caps_get_largest_free_block(cap),
+               (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM), svc_wifi_connected() ? "true" : "false");
+    }
+}
+#endif
 
 #include "app_ajustes.h"
 #include "app_flappy.h"
@@ -36,6 +57,9 @@ static const os_app_t app_aspecto = {
 
 void app_main(void)
 {
+#if CONFIG_WS183_BASELINE_METRICS
+    configASSERT(xTaskCreate(baseline_metrics, "baseline", 3072, NULL, 2, NULL) == pdPASS);
+#endif
     /* 1. I2C primero. De este bus cuelgan el AXP2101, el tactil CST816S,
           la IMU QMI8658 y el RTC de la placa. */
     ESP_ERROR_CHECK(bsp_i2c_init());

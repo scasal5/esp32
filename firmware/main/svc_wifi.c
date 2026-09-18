@@ -533,6 +533,9 @@ static void on_portal_pass(const char *ssid, const char *pass)
 
 esp_err_t svc_wifi_start(void)
 {
+#if CONFIG_WS183_BASELINE_WIFI_OFF
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
     if (s_inited) {
         return ESP_OK;
     }
