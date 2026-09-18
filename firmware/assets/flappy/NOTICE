@@ -1,0 +1,24 @@
+Flappy Bird assets — ws183-os
+=============================
+
+Graphics (CC0):
+  - flappy_atlas.png — Yorokobi Games / Rene Breitinger
+    https://opengameart.org/content/flappy-sprite-sheet-16x16
+    Upscaled NN x3 → bird_1/2/3, pipe_top/bot (LVGL RGB565A8 in main/).
+  - grass_dirt_16.png — OpenGameArt CC0 (ground tile)
+    https://opengameart.org/sites/default/files/grass_dirt_16.png
+  - Sky fill #4EC0CA procedural (classic Flappy cyan).
+
+SFX (CC0):
+  - Kenney Digital Audio (already in flappy_sfx.c). OGA 8-bit / 5-hit
+    swap is optional follow-up.
+
+NOT used:
+  - Kenney Tappy Plane (rejected: not classic Flappy look)
+  - MegaCrash / itch packs (login / $0 gate)
+
+SPIFFS (firmware/assets/flappy/) keeps short-named sources + NOTICE only.
+Runtime sprites are compiled into firmware/main/flappy_img.c — not SPIFFS.
+
+Sprites re-exported with near-white (#FFF) chroma-keyed to alpha=0
+(no opaque white halo). Upscale NN x2 from 16px tiles.

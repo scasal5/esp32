@@ -9,6 +9,7 @@
 #include <time.h>
 
 #include "app_ajustes.h"
+#include "app_flappy.h"
 #include "board_rtc.h"
 #include "boot_splash.h"
 #include "display.h"
@@ -129,6 +130,9 @@ void app_main(void)
             } else {
                 shell_register_app(&app_wifi);
             }
+#endif
+#if CONFIG_WS183_APP_FLAPPY
+            shell_register_app(&app_flappy);
 #endif
 #if CONFIG_WS183_APP_AJUSTES
             shell_register_app(&app_ajustes);

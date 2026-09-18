@@ -39,9 +39,18 @@ static lv_obj_t *s_root;
    de fade no puede apilar un segundo cierre ni dejar overlays huerfanos. */
 static bool s_busy;
 
+/* Una app puede "tomar" BOOT (p.ej. Flappy para flap). Mientras tanto el shell
+   ignora UI_EVENT_MENU; la app tiene que soltarlo en close(). */
+static bool s_boot_claimed;
+
 /* Solo hay una transicion a la vez, asi que el callback de fin vive en un unico
    lugar y no hace falta reservar nada. */
 static void (*s_fade_done)(void *);
+
+void shell_claim_boot(bool claim)
+{
+    s_boot_claimed = claim;
+}
 
 void shell_register_app(const os_app_t *app)
 {
@@ -187,6 +196,8 @@ static void unmount_app(void *obj)
     if (s_current->close != NULL) {
         s_current->close();
     }
+    /* Por si la app olvido soltar BOOT al cerrar. */
+    s_boot_claimed = false;
     s_current = NULL;
 
     /* Recien ahora: borrar el root se lleva puestos todos los objetos de la
@@ -238,6 +249,12 @@ static void on_pick(const os_app_t *app)
 static void back_cb(void *arg)
 {
     LV_UNUSED(arg);
+
+    /* App con BOOT claimado: no navegar. El handler de la app recibe el mismo
+       evento por su cuenta. */
+    if (s_boot_claimed) {
+        return;
+    }
 
     /* Un BOOT a mitad de transicion no hace nada: sin esto se apilarian dos
        cierres sobre el mismo objeto. */

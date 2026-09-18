@@ -44,3 +44,10 @@ esp_err_t shell_init(void);
  * evento de un objeto que el cierre va a borrar.
  */
 void shell_close_app(void);
+
+/*
+ * Mientras claim=true, UI_EVENT_MENU (BOOT) no navega: la app activa lo usa
+ * para si misma (p.ej. flap). Hay que soltarlo en close() o el shell queda
+ * sordo al boton.
+ */
+void shell_claim_boot(bool claim);
