@@ -17,6 +17,12 @@ config HARNESS_STACK_BYTES
 config HARNESS_JS_STACK_BYTES
     int "QuickJS stack limit in bytes"
     default 24576
+config HARNESS_EVAL_BUDGET_US
+    int "Guest eval budget in microseconds"
+    default 500000
+config HARNESS_TURN_BUDGET_US
+    int "Guest turn/Promise-drain budget in microseconds"
+    default 20000
 config HARNESS_SMOKE_TICKS
     int "Short smoke tick count"
     default 10000

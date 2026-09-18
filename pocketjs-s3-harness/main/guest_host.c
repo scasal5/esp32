@@ -5,6 +5,7 @@
 #include "pocketjs/guest_quickjs.h"
 #include "host_contract.h"
 #include "esp_heap_caps.h"
+#include "esp_memory_utils.h"
 #include "esp_timer.h"
 #include "esp_task_wdt.h"
 #include "esp_spiffs.h"
@@ -40,6 +41,13 @@ bool ws_guest_guard_end(void) {
     guard_guest=NULL;
     portEXIT_CRITICAL(&guard_lock);
     return was_expired;
+}
+esp_err_t ws_guest_derived(esp_err_t eval_error, bool timeout) {
+    return timeout?ESP_ERR_TIMEOUT:eval_error;
+}
+const char *ws_guest_cause(esp_err_t eval_error, bool timeout) {
+    if(eval_error==ESP_OK&&!timeout)return "ok";
+    return timeout?"timeout":"js";
 }
 void ws_guest_set_battery(ws_battery_t value){
     snapshot=value;snapshot_age_ms=value.sampled_us?(esp_timer_get_time()-value.sampled_us)/1000:0;
@@ -83,6 +91,11 @@ esp_err_t ws_guest_create(pocketjs_guest_t **guest) {
     esp_err_t e=pocketjs_guest_create(&config,guest);
     if(e!=ESP_OK)return e;
     e=pocketjs_guest_quickjs_install_once(*guest,"ws183.battery.v1",install,NULL);
+    if(e==ESP_OK){
+        JSContext *ctx=pocketjs_guest_quickjs_context(*guest);
+        printf("{\"type\":\"guest_memory_policy\",\"prefer_psram\":true,\"context_in_psram\":%s,\"runtime_in_psram\":%s}\n",
+            esp_ptr_external_ram(ctx)?"true":"false",esp_ptr_external_ram(JS_GetRuntime(ctx))?"true":"false");
+    }
     if(e!=ESP_OK){pocketjs_guest_destroy(*guest);*guest=NULL;}
     return e;
 }
@@ -110,6 +123,14 @@ esp_err_t ws_headless_tests(void) {
     if(admitted){
         pocketjs_package_host_contract_t wrong=ws_contract;wrong.tick_hz++;
         bool rejected=pocketjs_package_select(loaded,&wrong,&variant)!=ESP_OK;
+#define REJECT_FIELD(field,value) do{wrong=ws_contract;wrong.field=(value);rejected=(pocketjs_package_select(loaded,&wrong,&variant)!=ESP_OK)&&rejected;}while(0)
+        REJECT_FIELD(target_id,"another-host");
+        REJECT_FIELD(host_abi,ws_contract.host_abi+1);
+        REJECT_FIELD(logical_width,ws_contract.logical_width+1);
+        REJECT_FIELD(physical_height,ws_contract.physical_height+1);
+        REJECT_FIELD(raster_density,ws_contract.raster_density+1);
+        REJECT_FIELD(presentation,POCKETJS_PRESENTATION_FIT);
+#undef REJECT_FIELD
         wrong=ws_contract;wrong.profile_hash[0]^=1;
         rejected=rejected&&pocketjs_package_select(loaded,&wrong,&variant)!=ESP_OK;
         pocketjs_package_t *bad=NULL;
@@ -137,6 +158,7 @@ esp_err_t ws_headless_tests(void) {
         e=pocketjs_guest_quickjs_install(guest,immutable_fixture,NULL);
         if(e!=ESP_OK){pocketjs_guest_destroy(guest);return e;}
         esp_task_wdt_reset();
+        int64_t begun=esp_timer_get_time();
         ws_guest_guard_begin(guest,500000);
         e=pocketjs_guest_eval(guest,cases[i].js,strlen(cases[i].js),cases[i].name);
         bool timeout=ws_guest_guard_end();
@@ -146,11 +168,16 @@ esp_err_t ws_headless_tests(void) {
         }
         if(cases[i].frame&&e==ESP_OK&&!timeout) {
             pocketjs_guest_frame_t frame={.struct_size=sizeof(frame)};
+            begun=esp_timer_get_time();
             ws_guest_guard_begin(guest,20000);e=pocketjs_guest_frame(guest,&frame);timeout=ws_guest_guard_end();
         }
+        int64_t elapsed=esp_timer_get_time()-begun;
         bool passed=((e!=ESP_OK||timeout)==cases[i].fail);
-        printf("{\"type\":\"headless\",\"test\":\"%s\",\"pass\":%s,\"timeout\":%s,\"stack_free\":%u}\n",
-               cases[i].name,passed?"true":"false",timeout?"true":"false",(unsigned)uxTaskGetStackHighWaterMark(NULL));
+        if(strstr(cases[i].name,"runaway")||!strcmp(cases[i].name,"promise_chain"))
+            passed=passed&&timeout&&elapsed<(cases[i].frame?100000:750000);
+        if(!strcmp(cases[i].name,"heap")||!strcmp(cases[i].name,"stack"))passed=passed&&!timeout;
+        printf("{\"type\":\"headless\",\"test\":\"%s\",\"pass\":%s,\"timeout\":%s,\"elapsed_us\":%lld,\"stack_free\":%u}\n",
+               cases[i].name,passed?"true":"false",timeout?"true":"false",elapsed,(unsigned)uxTaskGetStackHighWaterMark(NULL));
         pocketjs_guest_destroy(guest);esp_task_wdt_reset();
         if(!passed)return ESP_FAIL;
         vTaskDelay(1);

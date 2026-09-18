@@ -54,6 +54,27 @@ class Contracts(unittest.TestCase):
             p=Path(folder)/'log';p.write_text('I (0) boot\n{"type":"memory"}\npartial {\n')
             self.assertEqual(events(p),[{'type':'memory'}])
 
+    def test_package_receipt_splits_js_and_package_bytes(self):
+        from package_receipt import sections, js_bytes, receipt_for, default_budgets
+        root=Path(__file__).resolve().parents[1]
+        pocket=root/'evidence/variant-a-solid/minified.pocket'
+        rec=receipt_for(pocket,transform='minify',original=None,
+                        budgets=default_budgets(root),profile_id='ws183-harness')
+        self.assertEqual(rec['packageBytes'],135272)
+        self.assertEqual(rec['javascriptBytes'],61034)
+        self.assertLess(rec['javascriptBytes'],rec['packageBytes'])
+        self.assertEqual(rec['pakBytes'],72480)
+        self.assertEqual(rec['profileId'],'ws183-harness')
+        self.assertEqual(rec['budgets']['evalBudgetUs'],500000)
+        info=sections(pocket.read_bytes())
+        self.assertEqual(js_bytes(info['sections'][3]),61034)
+
+    def test_spiffs_first_js_is_not_the_minified_package_size(self):
+        rec=json.loads((Path(__file__).resolve().parents[1]/'evidence/variant-a-solid/spiffs-first.receipt.json').read_text())
+        self.assertEqual(rec['packageBytes'],209768)
+        self.assertEqual(rec['javascriptBytes'],135522)
+        self.assertNotEqual(rec['javascriptBytes'],rec['packageBytes'])
+
     def test_non_app_image_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
             p=Path(folder)/'bad.bin';p.write_bytes(b'\0'*256)

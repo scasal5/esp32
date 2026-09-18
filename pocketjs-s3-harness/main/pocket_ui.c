@@ -22,16 +22,24 @@ static unsigned scenario_last=99;
 static int64_t static_since;
 static bool static_reported;
 static bool recovery;
+#if CONFIG_HARNESS_GOLDEN
 static unsigned golden_cases;
+#endif
 void ws_ui_stop(void) {
     ws_guest_guard_end();
     if(renderer&&target)pocketjs_rgb565_abort(renderer,target);
-    if(target)pocketjs_rgb565_target_destroy(target);target=NULL;
-    if(renderer)pocketjs_rgb565_renderer_destroy(renderer);renderer=NULL;
-    if(guest)pocketjs_guest_destroy(guest);guest=NULL;
-    if(binding)pocketjs_ui_qjs_destroy(binding);binding=NULL;
-    if(core)pocketjs_ui_core_destroy(core);core=NULL;
-    if(package)pocketjs_package_close(package);package=NULL;
+    if(target)pocketjs_rgb565_target_destroy(target);
+    target=NULL;
+    if(renderer)pocketjs_rgb565_renderer_destroy(renderer);
+    renderer=NULL;
+    if(guest)pocketjs_guest_destroy(guest);
+    guest=NULL;
+    if(binding)pocketjs_ui_qjs_destroy(binding);
+    binding=NULL;
+    if(core)pocketjs_ui_core_destroy(core);
+    core=NULL;
+    if(package)pocketjs_package_close(package);
+    package=NULL;
     heap_caps_free(package_bytes);package_bytes=NULL;
     heap_caps_free(fb);fb=NULL;heap_caps_free(reference);reference=NULL;
 }
@@ -52,9 +60,14 @@ esp_err_t ws_ui_start(void) {
         JS_SetPropertyStr(ctx,global,"__wsGolden",JS_TRUE);JS_FreeValue(ctx,global);
     }
 #endif
-    ws_guest_guard_begin(guest,500000);
+    ws_guest_guard_begin(guest,CONFIG_HARNESS_EVAL_BUDGET_US);
+    int64_t eval_started=esp_timer_get_time();
     e=pocketjs_guest_eval(guest,(const char *)variant.javascript.data,variant.javascript.size-1,"harness");
-    if(ws_guest_guard_end())e=ESP_ERR_TIMEOUT;
+    bool timeout=ws_guest_guard_end();
+    printf("{\"type\":\"guest_eval\",\"elapsed_us\":%lld,\"error\":%d,\"timeout\":%s,\"cause\":\"%s\",\"javascript_bytes\":%u}\n",
+           esp_timer_get_time()-eval_started,e,timeout?"true":"false",ws_guest_cause(e,timeout),
+           (unsigned)(variant.javascript.size?variant.javascript.size-1:0));
+    e=ws_guest_derived(e,timeout);
     if(e!=ESP_OK)goto fail;
     pocketjs_rgb565_renderer_config_t rc;pocketjs_rgb565_renderer_config_defaults(&rc);rc.scale=1;
     e=pocketjs_rgb565_renderer_create(&rc,&renderer);if(e!=ESP_OK)goto fail;
@@ -78,16 +91,27 @@ static esp_err_t set_scenario(unsigned scenario) {
 esp_err_t ws_ui_frame(ws_input_t in,unsigned scenario,ws_frame_metrics_t *m) {
     if(!guest)return ESP_ERR_INVALID_STATE;
     bool changed=scenario!=scenario_last;
-    int64_t t=esp_timer_get_time();ws_guest_guard_begin(guest,20000);
-    esp_err_t e=set_scenario(scenario);if(e!=ESP_OK){ws_guest_guard_end();return e;}
-    ws_guest_set_battery(ws_battery_snapshot());
-    pocketjs_ui_touch_t touch={.id=0,.x=in.x,.y=in.y};
-    pocketjs_ui_input_t input={.struct_size=sizeof(input),.buttons=in.boot?0x2000U:0,
-        .touches=in.down?&touch:NULL,.touch_count=in.down?1:0};
+    int64_t t=esp_timer_get_time();ws_guest_guard_begin(guest,CONFIG_HARNESS_TURN_BUDGET_US);
+    esp_err_t e=set_scenario(scenario);
     pocketjs_ui_frame_view_t frame={.struct_size=sizeof(frame)};
-    e=pocketjs_ui_turn(binding,&input,&frame);
-    if(ws_guest_guard_end())e=ESP_ERR_TIMEOUT;
+    if(e==ESP_OK){
+        ws_guest_set_battery(ws_battery_snapshot());
+        pocketjs_ui_touch_t touch={.id=0,.x=in.x,.y=in.y};
+        pocketjs_ui_input_t input={.struct_size=sizeof(input),.buttons=in.boot?0x2000U:0,
+            .touches=in.down?&touch:NULL,.touch_count=in.down?1:0};
+        e=pocketjs_ui_turn(binding,&input,&frame);
+        if(e==ESP_OK){
+            JSContext *ctx=pocketjs_guest_quickjs_context(guest);
+            JSValue global=JS_GetGlobalObject(ctx),response=JS_GetPropertyStr(ctx,global,"__wsResponded");
+            if(JS_IsException(response))e=ESP_FAIL;
+            else m->input_response=JS_ToBool(ctx,response)>0;
+            JS_FreeValue(ctx,response);JS_FreeValue(ctx,global);
+        }
+    }
+    bool timeout=ws_guest_guard_end();
+    m->guest_error=e;m->guest_timeout=timeout;
     m->us[M_TURN]=(uint32_t)(esp_timer_get_time()-t);
+    e=ws_guest_derived(e,timeout);
     if(e!=ESP_OK)return e; /* No mutation reaches physical display on guest fault. */
     pocketjs_rgb565_damage_plan_t plan={.struct_size=sizeof(plan)};
     t=esp_timer_get_time();e=pocketjs_rgb565_prepare(renderer,target,&frame,&plan);
@@ -140,6 +164,7 @@ esp_err_t ws_ui_frame(ws_input_t in,unsigned scenario,ws_frame_metrics_t *m) {
     if(e!=ESP_OK)goto abort;
     if(recovery)puts("{\"type\":\"invariant\",\"test\":\"transfer_recovery\",\"pass\":true}");
     scenario_last=scenario;recovery=false;m->presented=plan.region_count!=0;
+    if(scenario==2&&!changed&&plan.region_count)puts("{\"type\":\"invariant\",\"test\":\"battery\",\"pass\":true}");
     return ESP_OK;
 abort:
     pocketjs_rgb565_abort(renderer,target);pocketjs_rgb565_target_invalidate(target);recovery=true;
@@ -148,4 +173,31 @@ abort:
 size_t ws_ui_heap(void) {
     pocketjs_guest_stats_t stats={.struct_size=sizeof(stats)};
     return guest&&pocketjs_guest_stats(guest,&stats)==ESP_OK?stats.heap_used:0;
+}
+
+bool ws_ui_fault_test(const char *kind) {
+    if(!guest||!fb)return false;
+    bool eval=!strcmp(kind,"eval"),promise=!strcmp(kind,"promise");
+    if(!eval&&!promise&&strcmp(kind,"frame"))return false;
+    uint32_t before=esp_rom_crc32_le(0,(uint8_t *)fb,WS_FRAME_BYTES);
+    const char *source=eval?"ui.setProp(1,64,4294901760);while(true){}":promise?
+        "globalThis.frame=()=>{ui.setProp(1,64,4294901760);Promise.resolve().then(()=>{while(true){}})}":
+        "globalThis.frame=()=>{ui.setProp(1,64,4294901760);while(true){}}";
+    ws_guest_guard_begin(guest,CONFIG_HARNESS_EVAL_BUDGET_US);
+    int64_t begun=esp_timer_get_time();
+    esp_err_t e=pocketjs_guest_eval(guest,source,strlen(source),kind);
+    bool expired=ws_guest_guard_end();
+    if(!eval&&e==ESP_OK&&!expired){
+        pocketjs_ui_input_t input={.struct_size=sizeof(input)};
+        pocketjs_ui_frame_view_t view={.struct_size=sizeof(view)};
+        begun=esp_timer_get_time();ws_guest_guard_begin(guest,CONFIG_HARNESS_TURN_BUDGET_US);
+        e=pocketjs_ui_turn(binding,&input,&view);expired=ws_guest_guard_end();
+    }
+    int64_t elapsed=esp_timer_get_time()-begun;
+    bool passed=expired&&elapsed<(eval?750000:100000)&&
+        before==esp_rom_crc32_le(0,(uint8_t *)fb,WS_FRAME_BYTES);
+    /* Intentionally no prepare/render/transfer after the failed guest turn. */
+    printf("{\"type\":\"invariant\",\"test\":\"freeze_%s\",\"pass\":%s,\"elapsed_us\":%lld,\"error\":%d,\"timeout\":%s,\"cause\":\"%s\",\"framebuffer_crc\":%lu}\n",
+        kind,passed?"true":"false",elapsed,e,expired?"true":"false",ws_guest_cause(e,expired),(unsigned long)before);
+    return passed;
 }
