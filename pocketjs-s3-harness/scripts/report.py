@@ -56,19 +56,26 @@ def memory_summary(rows):
 
 
 def memory_stability(samples):
-    """Equivalent-cycle internal heap: two visits to scenario 0, means within 4 KiB."""
-    s0=[s for s in samples if s.get('scenario')==0]
-    if len(s0)<6:return 'unverified'
-    cycles,cur=[],[s0[0]]
-    for prev,item in zip(s0,s0[1:]):
-        if item['time_us']-prev['time_us']>120000000:
-            cycles.append(cur);cur=[item]
-        else:cur.append(item)
-    cycles.append(cur)
+    """Equivalent-cycle internal heap: first vs last visit to scenario 0.
+
+    Cycles are contiguous runs of scenario 0, so dwell time is not a constant.
+    First-vs-last (not 0-vs-1) so a slow leak over a 2 h soak is visible.
+    """
+    ordered=sorted((s for s in samples if 'time_us' in s), key=lambda s:s['time_us'])
+    cycles,cur,prev= [],None,None
+    for item in ordered:
+        scenario=item.get('scenario')
+        if scenario==0:
+            if prev!=0:
+                cur=[]
+                cycles.append(cur)
+            cur.append(item)
+        prev=scenario
+    cycles=[c for c in cycles if len(c)>=2]
     if len(cycles)<2:return 'unverified'
     first=statistics.mean(s['internal_free'] for s in cycles[0])
-    second=statistics.mean(s['internal_free'] for s in cycles[1])
-    return 'pass' if abs(first-second)<=4096 else 'fail'
+    last=statistics.mean(s['internal_free'] for s in cycles[-1])
+    return 'pass' if abs(first-last)<=4096 else 'fail'
 
 
 def evaluate(rows,receipt):

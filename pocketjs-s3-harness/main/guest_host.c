@@ -153,35 +153,41 @@ esp_err_t ws_headless_tests(void) {
         {"immutable_species","let a=new Uint8Array([7,8,9,10]),out=new Uint8Array(__immutable);a.constructor={[Symbol.species]:function(){return out}};let caught=false;try{a.map(x=>x+1)}catch(e){caught=true};if(!caught||out[0]!==1)throw Error('species');if(out.subarray(0,1)[0]!==1)throw Error('subarray');globalThis.frame=()=>{}",false,false},
     };
     ws_guest_set_battery((ws_battery_t){.available=true,.present=true,.percent=42,.millivolts=3800,.sampled_us=esp_timer_get_time()});
+    bool suite_ok=admitted,runaway_ok=true;
     for(unsigned i=0;i<sizeof(cases)/sizeof(cases[0]);i++) {
-        pocketjs_guest_t *guest=NULL;esp_err_t e=ws_guest_create(&guest);if(e!=ESP_OK)return e;
+        bool containment=strstr(cases[i].name,"runaway")||!strcmp(cases[i].name,"promise_chain");
+        pocketjs_guest_t *guest=NULL;esp_err_t e=ws_guest_create(&guest);
+        if(e!=ESP_OK){printf("{\"type\":\"headless\",\"test\":\"%s\",\"pass\":false,\"error\":%d}\n",cases[i].name,e);suite_ok=false;if(containment)runaway_ok=false;continue;}
         e=pocketjs_guest_quickjs_install(guest,immutable_fixture,NULL);
-        if(e!=ESP_OK){pocketjs_guest_destroy(guest);return e;}
+        if(e!=ESP_OK){
+            printf("{\"type\":\"headless\",\"test\":\"%s\",\"pass\":false,\"error\":%d}\n",cases[i].name,e);
+            pocketjs_guest_destroy(guest);suite_ok=false;if(containment)runaway_ok=false;continue;
+        }
         esp_task_wdt_reset();
         int64_t begun=esp_timer_get_time();
-        ws_guest_guard_begin(guest,500000);
+        ws_guest_guard_begin(guest,CONFIG_HARNESS_EVAL_BUDGET_US);
         e=pocketjs_guest_eval(guest,cases[i].js,strlen(cases[i].js),cases[i].name);
         bool timeout=ws_guest_guard_end();
         if(cases[i].frame&&(e!=ESP_OK||timeout)){
             printf("{\"type\":\"headless\",\"test\":\"%s_setup\",\"pass\":false}\n",cases[i].name);
-            pocketjs_guest_destroy(guest);return ESP_FAIL;
+            pocketjs_guest_destroy(guest);suite_ok=false;if(containment)runaway_ok=false;continue;
         }
         if(cases[i].frame&&e==ESP_OK&&!timeout) {
             pocketjs_guest_frame_t frame={.struct_size=sizeof(frame)};
             begun=esp_timer_get_time();
-            ws_guest_guard_begin(guest,20000);e=pocketjs_guest_frame(guest,&frame);timeout=ws_guest_guard_end();
+            ws_guest_guard_begin(guest,CONFIG_HARNESS_TURN_BUDGET_US);
+            e=pocketjs_guest_frame(guest,&frame);timeout=ws_guest_guard_end();
         }
         int64_t elapsed=esp_timer_get_time()-begun;
         bool passed=((e!=ESP_OK||timeout)==cases[i].fail);
-        if(strstr(cases[i].name,"runaway")||!strcmp(cases[i].name,"promise_chain"))
-            passed=passed&&timeout&&elapsed<(cases[i].frame?100000:750000);
+        if(containment)passed=passed&&timeout&&elapsed<(cases[i].frame?100000:750000);
         if(!strcmp(cases[i].name,"heap")||!strcmp(cases[i].name,"stack"))passed=passed&&!timeout;
-        printf("{\"type\":\"headless\",\"test\":\"%s\",\"pass\":%s,\"timeout\":%s,\"elapsed_us\":%lld,\"stack_free\":%u}\n",
-               cases[i].name,passed?"true":"false",timeout?"true":"false",elapsed,(unsigned)uxTaskGetStackHighWaterMark(NULL));
+        printf("{\"type\":\"headless\",\"test\":\"%s\",\"pass\":%s,\"timeout\":%s,\"elapsed_us\":%lld,\"error\":%d,\"cause\":\"%s\",\"stack_free\":%u}\n",
+               cases[i].name,passed?"true":"false",timeout?"true":"false",elapsed,e,ws_guest_cause(e,timeout),(unsigned)uxTaskGetStackHighWaterMark(NULL));
         pocketjs_guest_destroy(guest);esp_task_wdt_reset();
-        if(!passed)return ESP_FAIL;
+        if(!passed){suite_ok=false;if(containment)runaway_ok=false;}
         vTaskDelay(1);
     }
-    puts("{\"type\":\"invariant\",\"test\":\"runaway\",\"pass\":true}");
-    return admitted?ESP_OK:ESP_FAIL;
+    if(runaway_ok)puts("{\"type\":\"invariant\",\"test\":\"runaway\",\"pass\":true}");
+    return suite_ok?ESP_OK:ESP_FAIL;
 }

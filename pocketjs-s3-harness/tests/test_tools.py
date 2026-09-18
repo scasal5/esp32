@@ -38,6 +38,14 @@ class Contracts(unittest.TestCase):
     def test_quickjs_unknown_source_refused(self):
         with self.assertRaises(ValueError):prepare(b'not the pinned runtime')
 
+    def test_guest_drain_patch_stops_between_jobs(self):
+        from prepare_guest_drain import NEEDLE, prepare as patch_drain
+        patched=patch_drain(NEEDLE.encode())
+        self.assertIn(b'return ESP_ERR_TIMEOUT',patched)
+        self.assertIn(b'interrupt_epoch',patched)
+        with self.assertRaises(ValueError):patch_drain(b'no drain loop')
+        with self.assertRaises(ValueError):patch_drain((NEEDLE+NEEDLE).encode())
+
     def test_report_cannot_pass_without_measurements(self):
         result=evaluate([],{'mode':'pocket','bin_bytes':100})
         self.assertEqual(result['status'],'NOT-YET')
@@ -78,12 +86,22 @@ class Contracts(unittest.TestCase):
     def test_memory_stability_is_derived_not_emitted(self):
         self.assertIn('memory_stability',DERIVED_GATES)
         self.assertNotIn('memory_stability',DEVICE_INVARIANTS)
-        samples=[{'type':'memory','seq':i,'scenario':0,'time_us':t,'internal_free':100000,
-                  'internal_min':100000,'largest_internal_block':50000,'psram_free':8000000,'guest_heap_used':0}
-                 for i,t in enumerate((1,2,3,4,5,6,200000000,200000001,200000002,200000003,200000004,200000005))]
-        causes=evaluate(samples,{'mode':'pocket','bin_bytes':100,'restore_verified':True})['causes']
+        def row(seq,scenario,time_us,free=100000):
+            return {'type':'memory','seq':seq,'scenario':scenario,'time_us':time_us,'internal_free':free,
+                    'internal_min':100000,'largest_internal_block':50000,'psram_free':8000000,'guest_heap_used':0}
+        stable=[row(i,0,i) for i in range(6)]+[row(6,1,50)]+[row(7+i,0,200+i) for i in range(6)]
+        causes=evaluate(stable,{'mode':'pocket','bin_bytes':100,'restore_verified':True})['causes']
         self.assertNotIn('equivalent-cycle memory stability unverified',causes)
         self.assertNotIn('equivalent-cycle memory stability failed',causes)
+        leaked=[row(i,0,i) for i in range(6)]+[row(6,1,50)]+[row(7+i,0,200+i,90000) for i in range(6)]
+        self.assertIn('equivalent-cycle memory stability failed',
+                      evaluate(leaked,{'mode':'pocket','bin_bytes':100,'restore_verified':True})['causes'])
+        # A slow leak after cycle 1 must still fail: compare first vs last, not 0 vs 1.
+        slow=[row(i,0,i) for i in range(6)]+[row(6,1,50)]
+        slow+=[row(7+i,0,200+i) for i in range(6)]+[row(13,1,250)]
+        slow+=[row(14+i,0,400+i,90000) for i in range(6)]
+        self.assertIn('equivalent-cycle memory stability failed',
+                      evaluate(slow,{'mode':'pocket','bin_bytes':100,'restore_verified':True})['causes'])
 
     def test_restore_receipt_flag_satisfies_host_gate(self):
         causes=evaluate([],{'mode':'pocket','bin_bytes':100,'restore_verified':True})['causes']
